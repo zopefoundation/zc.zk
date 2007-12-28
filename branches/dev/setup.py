@@ -4,7 +4,7 @@ entry_points = """
 """
 
 setup(
-    name = ''
+    name = '',
     version = '0.1',
     author = 'Jim Fulton',
     author_email = 'jim@zope.com',
