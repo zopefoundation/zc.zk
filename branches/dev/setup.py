@@ -11,6 +11,9 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
+
+name, version = '', '0'
+
 import os
 from setuptools import setup, find_packages
 
@@ -29,14 +32,15 @@ long_description = (
         )
 
 setup(
-    name = '',
-    version = '0.1',
+    name = name,
+    version = version,
     author = 'Jim Fulton',
     author_email = 'jim@zope.com',
     description = '',
     long_description=long_description,
     license = 'ZPL 2.1',
     
+    include_package_data = True,
     packages = find_packages('src'),
     namespace_packages = ['zc'],
     package_dir = {'': 'src'},
