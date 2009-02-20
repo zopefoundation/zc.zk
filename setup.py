@@ -25,7 +25,7 @@ def read(rname):
                              )).read()
 
 long_description = (
-        read('src/zc/?/README.txt')
+        read('src/%s/README.txt' % '/'.join(name.split('.')))
         + '\n' +
         'Download\n'
         '--------\n'
