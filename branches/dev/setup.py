@@ -40,7 +40,6 @@ setup(
     long_description=long_description,
     license = 'ZPL 2.1',
     
-    include_package_data = True,
     packages = find_packages('src'),
     namespace_packages = ['zc'],
     package_dir = {'': 'src'},
