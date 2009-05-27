@@ -13,12 +13,13 @@
 ##############################################################################
 name, version = 'zc.', '0'
 
-from setuptools import setup
-
+install_requires = ['setuptools']
 extras_require = dict(test=['zope.testing'])
 
 entry_points = """
 """
+
+from setuptools import setup
 
 setup(
     author = 'Jim Fulton',
@@ -31,7 +32,7 @@ setup(
     packages = [name.split('.')[0], name],
     namespace_packages = [name.split('.')[0]],
     package_dir = {'': 'src'},
-    install_requires = ['setuptools'],
+    install_requires = install_requires,
     zip_safe = False,
     entry_points=entry_points,
     package_data = {name: ['*.txt', '*.test', '*.html']},
