@@ -21,14 +21,13 @@ entry_points = """
 """
 
 setup(
-    name = name, version = version,
-
     author = 'Jim Fulton',
     author_email = 'jim@zope.com',
-    long_description=open('README.txt').read(),
-    description = open('README.txt').read().strip().split('\n')[0],
     license = 'ZPL 2.1',
 
+    name = name, version = version,
+    long_description=open('README.txt').read(),
+    description = open('README.txt').read().strip().split('\n')[0],
     packages = [name.split('.')[0], name],
     namespace_packages = [name.split('.')[0]],
     package_dir = {'': 'src'},
