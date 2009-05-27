@@ -11,40 +11,32 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
-
 name, version = '', '0'
 
-import os
-from setuptools import setup, find_packages
+from setuptools import setup
+
+extras_require = dict(test=['zope.testing'])
 
 entry_points = """
 """
 
-def read(rname):
-    return open(os.path.join(os.path.dirname(__file__), *rname.split('/')
-                             )).read()
-
-long_description = (
-        read('src/%s/README.txt' % '/'.join(name.split('.')))
-        + '\n' +
-        'Download\n'
-        '--------\n'
-        )
-
 setup(
-    name = name,
-    version = version,
+    name = name, version = version,
+
     author = 'Jim Fulton',
     author_email = 'jim@zope.com',
-    description = '',
-    long_description=long_description,
+    long_description=open('README.txt').read(),
+    description = open('README.txt').read().strip().split('\n')[0],
     license = 'ZPL 2.1',
-    
-    packages = find_packages('src'),
+
+    packages = ['zc', name],
     namespace_packages = ['zc'],
     package_dir = {'': 'src'},
     install_requires = ['setuptools'],
     zip_safe = False,
     entry_points=entry_points,
-    include_package_data = True,
+    package_data = {name: ['*.txt', '*.test', '*.html']},
+    extras_require = extras_require,
+    tests_require = extras_require['test'],
+    test_suite = name+'.tests.test_suite',
     )
