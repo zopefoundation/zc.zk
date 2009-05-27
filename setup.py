@@ -11,7 +11,7 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
-name, version = '', '0'
+name, version = 'zc.', '0'
 
 from setuptools import setup
 
