@@ -29,8 +29,8 @@ setup(
     description = open('README.txt').read().strip().split('\n')[0],
     license = 'ZPL 2.1',
 
-    packages = ['zc', name],
-    namespace_packages = ['zc'],
+    packages = [name.split('.')[0], name],
+    namespace_packages = [name.split('.')[0]],
     package_dir = {'': 'src'},
     install_requires = ['setuptools'],
     zip_safe = False,
