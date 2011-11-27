@@ -275,6 +275,12 @@ logging API.  ZooKeeper log messages are forwarded to the Python
 
     Optional node properties can be provided as keyword arguments.
 
+``close()``
+    Close the ZooKeeper session.
+
+    This should be called when cleanly shutting down servers to more
+    quickly remove ephemeral nodes.
+
 zc.zk.Children
 --------------
 
