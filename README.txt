@@ -1,14 +1,4 @@
-Title Here
-**********
+High-level ZooKeeper API
+************************
 
-
-To learn more, see
-
-
-Changes
-*******
-
-0.1.0 (yyyy-mm-dd)
-==================
-
-Initial release
+See the README.txt in the zc.zk package.

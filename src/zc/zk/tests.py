@@ -60,6 +60,12 @@ class Tests(unittest.TestCase):
         self.assertEqual(handle, self.__zk.handle)
         return zookeeper.CONNECTED_STATE
 
+    @mock.patch('zookeeper.close')
+    def test_close(self, close):
+        self.__zk.close()
+        close.assert_called_with(0)
+        self.assertEqual(self.__zk.handle, None)
+
     @mock.patch('zookeeper.create')
     def test_register_server(self, create):
         @side_effect(create)
@@ -352,10 +358,10 @@ def setup(test):
 
 def test_suite():
     return unittest.TestSuite((
-        unittest.makeSuite(LoggingTests),
         unittest.makeSuite(Tests),
         doctest.DocFileSuite(
             'README.txt',
             setUp=setup, tearDown=zope.testing.setupstack.tearDown
             ),
+        unittest.makeSuite(LoggingTests),
         ))
