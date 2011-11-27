@@ -11,15 +11,18 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
-name, version = 'zc.', '0'
+name, version = 'zc.zk', '0'
 
-install_requires = ['setuptools']
-extras_require = dict(test=['zope.testing'])
+install_requires = ['setuptools', 'zc.thread']
+extras_require = dict(
+    test=['zope.testing', 'zookeeper-static', 'mock', 'pytest'])
 
 entry_points = """
 """
 
 from setuptools import setup
+import os
+readme = open(os.path.join('src', 'zc', 'zk', 'README.txt')).read()
 
 setup(
     author = 'Jim Fulton',
@@ -27,8 +30,8 @@ setup(
     license = 'ZPL 2.1',
 
     name = name, version = version,
-    long_description=open('README.txt').read(),
-    description = open('README.txt').read().strip().split('\n')[0],
+    long_description=readme,
+    description = readme.strip().split('\n')[0],
     packages = [name.split('.')[0], name],
     namespace_packages = [name.split('.')[0]],
     package_dir = {'': 'src'},
