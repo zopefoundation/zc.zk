@@ -29,6 +29,10 @@ however, that you must also install the Python ZooKeeper binding
 provided with ZooKeeper.  Because this binding is packaged a number of
 different ways, it isn't listed as a distribution requirement.
 
+An easy way to get the Python zookeeper binding is by installing
+``zc-zookeeper-static``, whch is a self-contained statically building
+distribution.
+
 Instantiating a ZooKeeper helper
 --------------------------------
 
