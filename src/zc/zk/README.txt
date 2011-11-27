@@ -1,5 +1,5 @@
-ZooKeeper Helpers
-=================
+High-level ZooKeeper API
+========================
 
 The zc.zk package provides some high-level interfaces to the low-level
 zookeeper extension.  It's not complete, in that it doesn't try, at
@@ -314,3 +314,11 @@ been created for it, the instances' data will be cleared.  Attempts to
 update properties will fail.  If callbacks have been registered, they
 will be called without arguments, if possible.  It would be bad, in
 practice, to remove a node that processes are watching.
+
+Changes
+-------
+
+0.1.0 (2011-11-27)
+~~~~~~~~~~~~~~~~~~
+
+Initial release
