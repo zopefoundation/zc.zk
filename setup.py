@@ -15,7 +15,7 @@ name, version = 'zc.zk', '0'
 
 install_requires = ['setuptools', 'zc.thread']
 extras_require = dict(
-    test=['zope.testing', 'zc-zookeeper-static', 'mock'],
+    test=['zope.testing', 'zc-zookeeper-static', 'mock', 'manuel'],
     static=['zc-zookeeper-static'],
     )
 

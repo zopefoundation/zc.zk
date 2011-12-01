@@ -36,24 +36,7 @@ distribution.
 Instantiating a ZooKeeper helper
 --------------------------------
 
-To use the helper API, create a ZooKeeper instance:
-
-.. test
-
-    >>> import zookeeper
-    >>> @side_effect(init)
-    ... def _(addr, func):
-    ...     global session_watch
-    ...     session_watch = func
-    ...     func(0, zookeeper.SESSION_EVENT, zookeeper.CONNECTED_STATE, '')
-    ...     assert_(addr=='zookeeper.example.com:2181', addr)
-
-    >>> @side_effect(state)
-    ... def _(handle):
-    ...     assert_(handle==0)
-    ...     return zookeeper.CONNECTED_STATE
-
-::
+To use the helper API, create a ZooKeeper instance::
 
     >>> import zc.zk
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
@@ -66,32 +49,17 @@ Register a server providing a service.
 --------------------------------------
 
 To register a server, use the ``register_server`` method, which takes
-a service path and the address a server is listing on
+a service path and the address a server is listing on::
+
+    >>> zk.register_server('/fooservice/providers', ('192.168.0.42', 8080))
 
 .. test
 
-    >>> import os, json, zookeeper
-    >>> path = '/fooservice/servers'
-    >>> addrs = []
-    >>> child_handler = None
-    >>> @side_effect(create)
-    ... def _(handle, path_, data, acl, flags):
-    ...     assert_(handle == 0)
-    ...     path_, addr = path_.rsplit('/', 1)
-    ...     assert_(path_ == path)
-    ...     assert_(json.loads(data) == dict(pid=os.getpid()))
-    ...     addrs.append(addr)
-    ...     assert_(acl == [zc.zk.world_permission()])
-    ...     assert_(flags == zookeeper.EPHEMERAL)
-    ...     global child_handler
-    ...     if child_handler is not None:
-    ...         child_handler(handle, zookeeper.CHILD_EVENT,
-    ...                       zookeeper.CONNECTED_STATE, path_)
-    ...         child_handler = None
-
-::
-
-    >>> zk.register_server('/fooservice/servers', ('192.168.0.42', 8080))
+   >>> import os
+   >>> zc.zk.decode(ZooKeeper.get(
+   ...     0, '/fooservice/providers/192.168.0.42:8080')[0]
+   ...     ) == dict(pid=os.getpid())
+   True
 
 
 ``register_server`` creates a read-only ephemeral ZooKeeper node as a
@@ -108,40 +76,28 @@ data as additional keyword arguments to register_server.  By default,
 the process id is set as the ``pid`` server key.  This is useful to
 tracking down the server process.
 
-Get the addresses of servers providing a service.
--------------------------------------------------
+Get the addresses of service providers.
+---------------------------------------
 
 Getting the adresses providing a service is accomplished by getting the
-children of a service node.
+children of a service node::
 
-.. test
-
-    >>> @side_effect(get_children)
-    ... def _(handle, path, handler):
-    ...     assert_(handle == 0, handle)
-    ...     assert_(path == '/fooservice/servers', path)
-    ...     global child_handler
-    ...     child_handler = handler
-    ...     return addrs
-
-::
-
-    >>> addresses = zk.children('/fooservice/servers')
+    >>> addresses = zk.children('/fooservice/providers')
     >>> sorted(addresses)
     ['192.168.0.42:8080']
 
 The ``children`` method returns an iterable of names of child nodes of
 the node specified by the given path.  The iterable is automatically
-updated when new servers are registered::
+updated when new providers are registered::
 
-    >>> zk.register_server('/fooservice/servers', ('192.168.0.42', 8081))
+    >>> zk.register_server('/fooservice/providers', ('192.168.0.42', 8081))
     >>> sorted(addresses)
     ['192.168.0.42:8080', '192.168.0.42:8081']
 
 You can call the iterable with a callback function that is called
 whenenever the list of children changes::
 
-    >>> @zk.children('/fooservice/servers')
+    >>> @zk.children('/fooservice/providers')
     ... def addresses_updated(addresses):
     ...     print 'addresses changed'
     ...     print sorted(addresses)
@@ -151,7 +107,7 @@ whenenever the list of children changes::
 The callback is called immediately with the children.  When we add
 another child, it'll be called again::
 
-    >>> zk.register_server('/fooservice/servers', ('192.168.0.42', 8082))
+    >>> zk.register_server('/fooservice/providers', ('192.168.0.42', 8082))
     addresses changed
     ['192.168.0.42:8080', '192.168.0.42:8081', '192.168.0.42:8082']
 
@@ -160,24 +116,7 @@ Get service configuration data.
 
 You get service configuration data by getting data associated with a
 ZooKeeper node.  The interface for getting data is similar to the
-interface for getting children:
-
-
-.. test
-
-    >>> node_data = json.dumps(dict(
-    ...     database = "/databases/foomain",
-    ...     threads = 1,
-    ...     favorite_color= "red"))
-    >>> @side_effect(get)
-    ... def _(handle, path, handler):
-    ...     assert_(handle == 0)
-    ...     assert_(path == '/fooservice')
-    ...     global get_handler
-    ...     get_handler = handler
-    ...     return node_data, {}
-
-::
+interface for getting children::
 
     >>> data = zk.properties('/fooservice')
     >>> data['database']
@@ -209,18 +148,7 @@ Updating node data
 ------------------
 
 You can't set data properties, but you can update data by calling it's
-``update`` method:
-
-.. test
-
-    >>> @side_effect(set)
-    ... def _(handle, path, data):
-    ...     global node_data
-    ...     node_data = data
-    ...     get_handler(handle, zookeeper.CHANGED_EVENT,
-    ...                 zookeeper.CONNECTED_STATE, path)
-
-::
+``update`` method::
 
     >>> data.update(threads=2, secret='123')
     data updated
@@ -251,6 +179,244 @@ ZooKeeper logging
 logging API.  ZooKeeper log messages are forwarded to the Python
 ``'ZooKeeper'`` logger.
 
+Tree-definition format, import, and export
+------------------------------------------
+
+You can describe a ZooKeeper tree using a textual tree
+representation. You can then populate the tree by importing the
+representation.  Heres an example::
+
+  /lb
+    /pools
+      /cms
+        # The address is fixed because it's
+        # exposed externally
+        address = '1.2.3.4:80'
+        providers -> /cms/providers
+      /retail
+        address = '1.2.3.5:80'
+        providers -> /cms/retail
+
+  /cms
+    threads = 3
+    /providers
+    /databases
+      /main
+        /providers
+
+  /retail
+    threads = 1
+    /providers
+    /databases
+      main -> /cms/databases/main
+      /ugc
+        /providers
+
+.. -> tree_text
+
+This example defines a tree with 3 top nodes, ``lb`` and ``cms``, and
+``retail``.  The ``retail`` node has two subnodes, ``providers`` and
+``databases`` and a property ``threads``.  The ``/retail/databases``
+node has symbolic link, ``main`` and a ``ugc`` subnode.  The symbolic
+link is implemented as a property named ``main ->``.  We'll say more
+about symbolic links in a later section.
+
+You can import a tree definition with the ``import_tree`` method:
+
+    >>> zk.import_tree(tree_text)
+
+This imports the tree at the top pf the ZooKeeper tree.
+
+We can also export a ZooKeeper tree:
+
+    >>> print zk.export_tree(),
+    /cms
+      threads = 3
+      /databases
+        /main
+          /providers
+      /providers
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+        /retail
+          address = u'1.2.3.5:80'
+          providers -> /cms/retail
+    /retail
+      threads = 1
+      /databases
+        main -> /cms/databases/main
+        /ugc
+          /providers
+      /providers
+
+Note that when we export a tree:
+
+- The special reserverd top-level zookeeper node is omitted.
+- Ephemeral nodes are ommitted.
+- Each node's information is sorted by type (properties, then links,
+- then subnodes) and then by name,
+
+You can export just a portion of a tree:
+
+    >>> print zk.export_tree('/fooservice'),
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+
+You can optionally see ephemeral nodes:
+
+    >>> print zk.export_tree('/fooservice', ephemeral=True),
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+        /192.168.0.42:8080
+          pid = 81176
+        /192.168.0.42:8081
+          pid = 81176
+        /192.168.0.42:8082
+          pid = 81176
+
+We can import a tree over an existing tree and changes will be
+applied.  Let's update our textual description::
+
+  /lb
+    /pools
+      /cms
+        # The address is fixed because it's
+        # exposed externally
+        address = '1.2.3.4:80'
+        providers -> /cms/providers
+
+  /cms
+    threads = 4
+    /providers
+    /databases
+      /main
+        /providers
+
+.. -> tree_text
+
+and reimport::
+
+    >>> zk.import_tree(tree_text)
+    extra path not trimmed: /lb/pools/retail
+
+We got a warning about nodes left over from the old tree.  We can see
+this if we export the tree:
+
+    >>> print zk.export_tree(),
+    /cms
+      threads = 4
+      /databases
+        /main
+          /providers
+      /providers
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+        /retail
+          address = u'1.2.3.5:80'
+          providers -> /cms/retail
+    /retail
+      threads = 1
+      /databases
+        main -> /cms/databases/main
+        /ugc
+          /providers
+      /providers
+
+If we want to trim these, we can add a ``trim`` option.  This is a
+little scary, so we'll use the dry-run option to see what it's going
+to do::
+
+    >>> zk.import_tree(tree_text, trim=True, dry_run=True)
+    would delete /lb/pools/retail.
+
+That's what we'd expect, so we go ahead:
+
+    >>> zk.import_tree(tree_text, trim=True)
+    >>> print zk.export_tree(),
+    /cms
+      threads = 4
+      /databases
+        /main
+          /providers
+      /providers
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+    /retail
+      threads = 1
+      /databases
+        main -> /cms/databases/main
+        /ugc
+          /providers
+      /providers
+
+Note that nodes containing (directly or recursively) ephemeral nodes
+will never be trimmed.  Also node that top-level nodes are never
+automatically trimmed.  So we weren't warned about the unreferenced
+top-level nodes in the import.
+
+Recursice Deletion
+------------------
+
+ZooKeeper only allows deletion of nodes without children.
+The ``delete_recursive`` method automates removing a node and all of
+it's children.
+
+If we want to remove the ``retail`` top-level node, we can use
+delete_recursive::
+
+    >>> zk.delete_recursive('/retail')
+    >>> print zk.export_tree(),
+    /cms
+      threads = 4
+      /databases
+        /main
+          /providers
+      /providers
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+
+You can't delete nodes ephemeral nodes, or nodes that contain them:
+
+    >>> zk.delete_recursive('/fooservice')
+    Not deleting /fooservice/providers/192.168.0.42:8080 because it's ephemeral.
+    Not deleting /fooservice/providers/192.168.0.42:8081 because it's ephemeral.
+    Not deleting /fooservice/providers/192.168.0.42:8082 because it's ephemeral.
+    /fooservice/providers not deleted due to ephemeral descendent.
+    /fooservice not deleted due to ephemeral descendent.
+
+
 ``zc.zk.ZooKeeper``
 -------------------
 
@@ -269,6 +435,46 @@ logging API.  ZooKeeper log messages are forwarded to the Python
     This attribute can be used to call the lower-level API provided by
     the ``zookeeper`` extension.
 
+``import_tree(text[, path='/'[, trim[, acl[, dry_run]]]])``
+    Create tree nodes by importing a textual tree representation.
+
+    text
+       A textual representation of the tree.
+
+    path
+       The path at which to create the top-level nodes.
+
+    trim
+       Boolean, defaulting to false, indicating whether nodes not in
+       the textual representation should be removed.
+
+    acl
+       An access control-list to use for imported nodes.  If not
+       specifuied, then full access is allowed to everyone.
+
+    dry_run
+       Boolean, defaulting to false, indicating whether to do a dry
+       run of the import, without applying any changes.
+
+``export_tree(path[, include_ephemeral])``
+    Export a tree to a text representation.
+
+    path
+      The path to export.
+
+    include_ephemeral
+       Boolean, defaulting to false, indicating whether to include
+       ephemeral nodes in the export.  Including ephemeral nodes is
+       mainly useful for visualizing the tree state.
+
+``delete_recursive(path[, dry_run])``
+   Delete a node and all of it's subnodes.
+
+   Ephemeral nodes or nodes containing them are not deleted.
+
+   The dry_run option causes a summary of what would be deleted to be
+   printed without actually deleting anything.
+
 ``register_server(path, address, **data)``
     Register a server at a path with the address.
 
@@ -284,6 +490,17 @@ logging API.  ZooKeeper log messages are forwarded to the Python
 
     This should be called when cleanly shutting down servers to more
     quickly remove ephemeral nodes.
+
+In addition, ``ZooKeeper`` instances provide access to the following
+ZooKeeper functions as methods: ``acreate``, ``add_auth``,
+``adelete``, ``aexists``, ``aget``, ``aget_acl``, ``aget_children``,
+``aset``, ``aset_acl``, ``async``, ``client_id``, ``create``,
+``delete``, ``exists``, ``get``, ``get_acl``, ``get_children``,
+``is_unrecoverable``, ``recv_timeout``, ``set``, ``set2``,
+``set_acl``, ``set_debug_level``, ``set_log_stream``, ``set_watcher``,
+and ``zerror``. When calling these as methods on ``ZooKeeper``
+instances, it isn't necessary to pass a handle, as that is provided
+automatically.
 
 zc.zk.Children
 --------------
@@ -327,6 +544,17 @@ practice, to remove a node that processes are watching.
 
 Changes
 -------
+
+0.2.0 (2011-12-??)
+~~~~~~~~~~~~~~~~~~
+
+- Added tree import and export.
+- Added recursive node-deletion API.
+- Added symbolic-links.
+- Added convenience access to low-level ZooKeeper APIs.
+- Added ``OPEN_ACL_UNSAFE`` and ``READ_ACL_UNSAFE`` (in ``zc.zk``),
+  which are mentioned by the ZooKeeper docs. but not included in the
+  ``zookeeper`` module.
 
 0.1.0 (2011-11-27)
 ~~~~~~~~~~~~~~~~~~

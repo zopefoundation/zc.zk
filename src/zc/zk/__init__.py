@@ -1,7 +1,21 @@
+##############################################################################
+#
+# Copyright (c) Zope Foundation and Contributors.
+# All Rights Reserved.
+#
+# This software is subject to the provisions of the Zope Public License,
+# Version 2.0 (ZPL).  A copy of the ZPL should accompany this distribution.
+# THIS SOFTWARE IS PROVIDED "AS IS" AND ANY AND ALL EXPRESS OR IMPLIED
+# WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF TITLE, MERCHANTABILITY, AGAINST INFRINGEMENT, AND FITNESS
+# FOR A PARTICULAR PURPOSE.
+#
+##############################################################################
 import collections
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import zc.thread
@@ -41,8 +55,52 @@ def parse_addr(addr):
     host, port = addr.split(':')
     return host, int(port)
 
+def encode(props):
+    if len(props) == 1 and 'string_value' in props:
+        return props['string_value']
+
+    if props:
+        return json.dumps(props, separators=(',',':'))
+    else:
+        return ''
+
+def decode(sdata, path='?'):
+    s = sdata.strip()
+    if not s:
+        data = {}
+    elif s.startswith('{') and s.endswith('}'):
+        try:
+            data = json.loads(s)
+        except:
+            logger.exception('bad json data in node at %r', path)
+            data = dict(string_value = sdata)
+    else:
+        data = dict(string_value = sdata)
+    return data
+
+def join(*args):
+    return '/'.join(args)
+
 def world_permission(perms=zookeeper.PERM_READ):
     return dict(perms=perms, scheme='world', id='anyone')
+
+OPEN_ACL_UNSAFE = [world_permission(zookeeper.PERM_ALL)]
+READ_ACL_UNSAFE = [world_permission()]
+
+
+_text_is_node = re.compile(r'/(?P<name>\S+)$').match
+_text_is_property = re.compile(
+    r'(?P<name>\S+)'
+    '\s*=\s*'
+    '(?P<expr>\S.*)'
+    '$'
+    ).match
+_text_is_link = re.compile(
+    r'(?P<name>\S+)'
+    '\s*->\s*'
+    '(?P<target>/\S+)'
+    '$'
+    ).match
 
 class CancelWatch(Exception):
     pass
@@ -87,8 +145,10 @@ class ZooKeeper:
 
     def register_server(self, path, addr, **kw):
         kw['pid'] = os.getpid()
+        if not isinstance(addr, str):
+            addr = '%s:%s' % addr
         self.connected.wait()
-        zookeeper.create(self.handle, path + '/%s:%s' % addr, json.dumps(kw),
+        zookeeper.create(self.handle, path + '/' + addr, encode(kw),
                          [world_permission()], zookeeper.EPHEMERAL)
 
     def _watch(self, watch, wait=True):
@@ -115,32 +175,189 @@ class ZooKeeper:
     def children(self, path):
         return Children(self, path)
 
+    def import_tree(self, text, path='/', trim=False, acl=OPEN_ACL_UNSAFE,
+                    dry_run=False):
+        # Step 1, build up internal tree repesentation:
+        root = _Tree()
+        indents = [(-1, root)] # sorted [(indent, node)]
+        lineno = 0
+        for line in text.split('\n'):
+            lineno += 1
+            line = line.rstrip()
+            if not line:
+                continue
+            data = line.strip()
+            if data[0] == '#':
+                continue
+            indent = len(line) - len(data)
+
+            m = _text_is_property(data)
+            if m:
+                expr = m.group('expr')
+                try:
+                    data = eval(expr, {})
+                except Exception, v:
+                    raise ValueError("Error %s in expression: %r" % (v, expr))
+                data = m.group('name'), data
+            else:
+                m = _text_is_link(data)
+                if m:
+                    data = (m.group('name') + ' ->'), m.group('target')
+                else:
+                    m = _text_is_node(data)
+                    if m:
+                        data = _Tree(m.group('name'))
+                    else:
+                        if '->' in data:
+                            raise ValueError(lineno, data, "Bad link format")
+                        else:
+                            raise ValueError(lineno, data, "Unrecognized data")
+
+            if indent > indents[-1][0]:
+                if not isinstance(indents[-1][1], _Tree):
+                    raise ValueError(
+                        lineno, line,
+                        "Can't indent under properties")
+                indents.append((indent, data))
+            else:
+                while indent < indents[-1][0]:
+                    indents.pop()
+
+                if indent > indents[-1][0]:
+                    raise ValueError(lineno, data, "Invalid indentation")
+
+            if isinstance(data, _Tree):
+                children = indents[-2][1].children
+                if data.name in children:
+                    raise ValueError(lineno, data, 'duplicate node')
+                children[data.name] = data
+                indents[-1] = indent, data
+            else:
+                if indents[-2][1] is root:
+                    raise ValueError("Can't above imported nodes.")
+                properties = indents[-2][1].properties
+                name, value = data
+                if name in properties:
+                    raise ValueError(lineno, data, 'duplicate property')
+                properties[name] = value
+
+        # Step 2 Create The nodes
+        while path.endswith('/'):
+            path = path[:-1] # Mainly to deal w root: /
+        self._import_tree(path, root, acl, trim, dry_run, True)
+
+    def _import_tree(self, path, node, acl, trim, dry_run, top=False):
+        self.connected.wait()
+        if not top:
+            new_children = set(node.children)
+            for name in self.get_children(path):
+                if name in new_children:
+                    continue
+                cpath = join(path, name)
+                if trim:
+                    self.delete_recursive(cpath, dry_run)
+                else:
+                    print 'extra path not trimmed:', cpath
+
+        for name, child in node.children.iteritems():
+            cpath = path + '/' + name
+            data = encode(child.properties)
+            if self.exists(cpath):
+                if dry_run:
+                    new = child.properties
+                    old = decode(self.get(cpath)[0])
+                    for n, v in sorted(old.items()):
+                        if n not in new:
+                            if n.endswith(' ->'):
+                                print '%s remove link %s %s' % (cpath, n, v)
+                            else:
+                                print '%s remove property %s = %s' % (
+                                    cpath, n, v)
+                        elif new[n] != v:
+                            if n.endswith(' ->'):
+                                print '%s %s link change from %s to %s' % (
+                                    cpath, n[:-3], v, new[n])
+                            else:
+                                print '%s %s change from %s to %s' % (
+                                    cpath, n, v, new[n])
+                    for n, v in sorted(new.items()):
+                        if n not in old:
+                            if n.endswith(' ->'):
+                                print '%s add link %s %s' % (cpath, n, v)
+                            else:
+                                print '%s add property %s = %s' % (
+                                    cpath, n, v)
+                else:
+                    self.set(cpath, data)
+                    meta, oldacl = self.get_acl(cpath)
+                    if acl != oldacl:
+                        self.set_acl(cpath, meta['aversion'], acl)
+            else:
+                if dry_run:
+                    print 'add', cpath
+                    continue
+                else:
+                    self.create(cpath, data, acl)
+            self._import_tree(cpath, child, acl, trim, dry_run)
+
+    def delete_recursive(self, path, dry_run=False):
+        for name in self.get_children(path):
+            self.delete_recursive(join(path, name))
+
+        if self.get_children(path):
+            print "%s not deleted due to ephemeral descendent." % path
+            return
+
+        ephemeral = self.get(path)[1]['ephemeralOwner']
+        if dry_run:
+            if ephemeral:
+                print "wouldn't delete %s because it's ephemeral." % path
+            else:
+                print "would delete %s." % path
+        else:
+            if ephemeral:
+                print "Not deleting %s because it's ephemeral." % path
+            else:
+                logger.info('deleting %s', path)
+                self.delete(path)
+
+    def export_tree(self, path='/', ephemeral=False):
+        output = []
+        out = output.append
+
+        def export_tree(path, indent):
+            children = self.get_children(path)
+            if path == '/':
+                path = ''
+                if 'zookeeper' in children:
+                    children.remove('zookeeper')
+            else:
+                data, meta = self.get(path)
+                if meta['ephemeralOwner'] and not ephemeral:
+                    return
+                out(indent+'/'+path.rsplit('/', 1)[1])
+                indent += '  '
+                links = []
+                for i in sorted(decode(data).iteritems()):
+                    if i[0].endswith(' ->'):
+                        links.append(i)
+                    else:
+                        out(indent+"%s = %r" % i)
+                for i in links:
+                    out(indent+"%s %s" % i)
+
+            for name in children:
+                export_tree(path+'/'+name, indent)
+
+        export_tree(path, '')
+        return '\n'.join(output)+'\n'
+
     def properties(self, path):
         return Properties(self, path)
 
     def _set(self, path, data):
         self.connected.wait()
         return zookeeper.set(self.handle, path, data)
-
-    def print_tree(self, path='/', indent=0):
-        self.connected.wait()
-        prefix = ' '*indent
-        print prefix + path.split('/')[-1]+'/'
-        indent += 2
-        prefix += '  '
-        data = zookeeper.get(self.handle, path)[0].strip()
-        if data:
-            if data.startswith('{') and data.endswith('}'):
-                data = json.loads(data)
-                import pprint
-                print prefix+pprint.pformat(data).replace(
-                    '\n', prefix+'\n')
-            else:
-                print prefix + repr(data)
-        for p in zookeeper.get_children(self.handle, path):
-            if not path.endswith('/'):
-                p = '/'+p
-            self.print_tree(path+p, indent)
 
     def close(self):
         zookeeper.close(self.handle)
@@ -151,6 +368,23 @@ class ZooKeeper:
         if self.handle is None:
             return zookeeper.CONNECTING_STATE
         return zookeeper.state(self.handle)
+
+
+def _make_method(name):
+    return (lambda self, *a, **kw:
+            getattr(zookeeper, name)(self.handle, *a, **kw))
+
+for name in (
+    'acreate', 'add_auth', 'adelete', 'aexists', 'aget', 'aget_acl',
+    'aget_children', 'aset', 'aset_acl', 'async', 'client_id',
+    'create', 'delete', 'exists', 'get', 'get_acl',
+    'get_children', 'is_unrecoverable', 'recv_timeout', 'set',
+    'set2', 'set_acl', 'set_debug_level', 'set_log_stream',
+    'set_watcher', 'zerror',
+    ):
+    setattr(ZooKeeper, name, _make_method(name))
+
+del _make_method
 
 
 class NodeInfo:
@@ -213,19 +447,7 @@ class Properties(NodeInfo, collections.Mapping):
 
     def setData(self, data):
         sdata, self.meta_data = data
-        s = sdata.strip()
-        if not s:
-            data = {}
-        elif s.startswith('{') and s.endswith('}'):
-            try:
-                data = json.loads(s)
-            except:
-                logger.exception('bad json data in node at %r', self.path)
-                data = dict(string_value = sdata)
-        else:
-            data = dict(string_value = sdata)
-
-        self.data = data
+        self.data = decode(sdata, self.path)
 
     def __getitem__(self, key):
         return self.data[key]
@@ -240,14 +462,8 @@ class Properties(NodeInfo, collections.Mapping):
         return self.data.copy()
 
     def _set(self, data):
-        if not data:
-            sdata = ''
-        elif len(data) == 1 and 'string_value' in data:
-            sdata = data['string_value']
-        else:
-            sdata = json.dumps(data)
         self.data = data
-        zookeeper.set(self.session.handle, self.path, sdata)
+        zookeeper.set(self.session.handle, self.path, encode(data))
 
     def set(self, **data):
         self._set(data)
@@ -260,3 +476,13 @@ class Properties(NodeInfo, collections.Mapping):
     def __hash__(self):
         # Gaaaa, collections.Mapping
         return hash(id(self))
+
+class _Tree:
+    # Internal tree rep for import/export
+
+    def __init__(self, name='', properties=None, **children):
+        self.name = name
+        self.properties = properties or {}
+        self.children = children
+        for name, child in children.iteritems():
+            child.name = name

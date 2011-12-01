@@ -1,8 +1,25 @@
+##############################################################################
+#
+# Copyright (c) Zope Foundation and Contributors.
+# All Rights Reserved.
+#
+# This software is subject to the provisions of the Zope Public License,
+# Version 2.0 (ZPL).  A copy of the ZPL should accompany this distribution.
+# THIS SOFTWARE IS PROVIDED "AS IS" AND ANY AND ALL EXPRESS OR IMPLIED
+# WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF TITLE, MERCHANTABILITY, AGAINST INFRINGEMENT, AND FITNESS
+# FOR A PARTICULAR PURPOSE.
+#
+##############################################################################
 import doctest
 import json
 import logging
+import manuel.capture
+import manuel.doctest
+import manuel.testing
 import mock
 import os
+import re
 import StringIO
 import time
 import zc.zk
@@ -10,6 +27,7 @@ import zc.thread
 import zookeeper
 import zope.testing.loggingsupport
 import zope.testing.setupstack
+import zope.testing.renormalizing
 import unittest
 
 def wait_until(func, timeout=9):
@@ -28,10 +46,13 @@ class LoggingTests(unittest.TestCase):
         f = StringIO.StringIO()
         h = logging.StreamHandler(f)
         logger.addHandler(h)
-        logger.setLevel(logging.ERROR)
-        handle = zookeeper.init('zookeeper.example.com:2181')
-        wait_until(lambda : 'error' in f.getvalue())
-        zookeeper.close(handle)
+        logger.setLevel(logging.DEBUG)
+        try:
+            handle = zookeeper.init('zookeeper.example.com:2181')
+            zookeeper.close(handle)
+        except:
+            pass
+        wait_until(lambda : 'environment' in f.getvalue())
         logger.setLevel(logging.NOTSET)
         logger.removeHandler(h)
 
@@ -299,7 +320,7 @@ class Tests(unittest.TestCase):
             self.assertEqual((handle, path_), (0, path))
 
         properties.set(b=2)
-        self.assertEqual(self.__set_data, '{"b": 2}')
+        self.assertEqual(self.__set_data, '{"b":2}')
         properties.set()
         self.assertEqual(self.__set_data, '')
         properties.set(string_value='xxx')
@@ -344,6 +365,104 @@ class Tests(unittest.TestCase):
         self.assertEqual(list(children), [])
         ccb.assert_called_with()
 
+def resilient_import():
+    """
+We can use vatious spacing in properties and links:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /test
+    ...   a=1
+    ...   b      =1
+    ...   c=      1
+    ...   ad->/x
+    ...   af          ->/x
+    ...   ae->         /x
+    ... ''')
+
+    >>> print zk.export_tree('/test'),
+    /test
+      a = 1
+      b = 1
+      c = 1
+      ad -> /x
+      ae -> /x
+      af -> /x
+
+When an expression is messed up, we get sane errors:
+
+    >>> zk.import_tree('''
+    ... /test
+    ...   a= 1+
+    ... ''') # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    ValueError: Error unexpected EOF while parsing (<string>, line 1)
+    in expression: '1+'
+
+    >>> zk.import_tree('''
+    ... /test
+    ...   a ->
+    ... ''') # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    ValueError: (3, 'a ->', 'Bad link format')
+
+    >>> zk.import_tree('''
+    ... /test
+    ...   a -> 1
+    ... ''') # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ValueError: (3, 'a -> 1', 'Bad link format')
+    """
+
+def import_dry_run():
+    """
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /test
+    ...   a=1
+    ...   b = 2
+    ...   /c1
+    ...     /c12
+    ...   /c2
+    ...   ae->         /x
+    ...   ad->         /y
+    ... ''')
+
+    >>> zk.import_tree('''
+    ... /test
+    ...   a=2
+    ...   /c1
+    ...     /c12
+    ...       a = 1
+    ...       b -> /b
+    ...       /c123
+    ...   ae->         /z
+    ... ''', dry_run=True)
+    /test a change from 1 to 2
+    /test remove link ad -> /y
+    /test ae link change from /x to /z
+    /test remove property b = 2
+    extra path not trimmed: /test/c2
+    /test/c1/c12 add property a = 1
+    /test/c1/c12 add link b -> /b
+    add /test/c1/c12/c123
+
+    >>> print zk.export_tree('/test'),
+    /test
+      a = 1
+      b = 2
+      ad -> /y
+      ae -> /x
+      /c1
+        /c12
+      /c2
+
+    """
+
+
 def assert_(cond, mess=''):
     if not cond:
         print 'assertion failed: ', mess
@@ -351,17 +470,155 @@ def assert_(cond, mess=''):
 def setup(test):
     test.globs['side_effect'] = side_effect
     test.globs['assert_'] = assert_
-    for name in 'state', 'init', 'create', 'get', 'set', 'get_children':
+    test.globs['ZooKeeper'] = zk = ZooKeeper(
+        Node(
+            fooservice = Node(
+                json.dumps(dict(
+                    database = "/databases/foomain",
+                    threads = 1,
+                    favorite_color= "red",
+                    )),
+                providers = Node()
+                ),
+            zookeeper = Node('', quota=Node()),
+            ),
+        )
+    for name in ('state', 'init', 'create', 'get', 'set', 'get_children',
+                 'exists', 'get_acl', 'set_acl', 'delete'):
         cm = mock.patch('zookeeper.'+name)
-        test.globs[name] = cm.__enter__()
+        test.globs[name] = m = cm.__enter__()
+        m.side_effect = getattr(zk, name)
         zope.testing.setupstack.register(test, cm.__exit__)
+
+class ZooKeeper:
+
+    def __init__(self, tree):
+        self.root = tree
+
+    def init(self, addr, watch=None):
+        self.handle = 0
+        assert_(addr=='zookeeper.example.com:2181', addr)
+        if watch:
+            watch(0, zookeeper.SESSION_EVENT, zookeeper.CONNECTED_STATE, '')
+
+    def state(self, handle):
+        self.check_handle(handle)
+        return zookeeper.CONNECTED_STATE
+
+    def check_handle(self, handle):
+        if handle != self.handle:
+            raise zookeeper.ZooKeeperException('handle out of range')
+
+    def traverse(self, path):
+        node = self.root
+        for name in path.split('/')[1:]:
+            if not name:
+                continue
+            try:
+                node = node.children[name]
+            except KeyError:
+                raise zookeeper.NoNodeException('no node')
+
+        return node
+
+    def create(self, handle, path, data, acl, flags=0):
+        self.check_handle(handle)
+        base, name = path.rsplit('/', 1)
+        node = self.traverse(base)
+        if name in node.children:
+            raise zookeeper.NodeExistsException()
+        node.children[name] = newnode = Node(data)
+        newnode.acls = acl
+        newnode.flags = flags
+        node.children_changed(self.handle, zookeeper.CONNECTED_STATE, base)
+        return path
+
+    def delete(self, handle, path):
+        self.check_handle(handle)
+        self.traverse(path) # seeif it's there
+        base, name = path.rsplit('/', 1)
+        node = self.traverse(base)
+        del node.children[name]
+        node.children_changed(self.handle, zookeeper.CONNECTED_STATE, base)
+
+    def exists(self, handle, path):
+        self.check_handle(handle)
+        try:
+            self.traverse(path)
+            return True
+        except zookeeper.NoNodeException:
+            return False
+
+    def get_children(self, handle, path, watch=None):
+        self.check_handle(handle)
+        node = self.traverse(path)
+        if watch:
+            node.child_watchers += (watch, )
+        return sorted(node.children)
+
+    def get(self, handle, path, watch=None):
+        self.check_handle(handle)
+        node = self.traverse(path)
+        if watch:
+            node.watchers += (watch, )
+        return node.data, dict(
+            ephemeralOwner=(1 if node.flags & zookeeper.EPHEMERAL else 0),
+            )
+
+    def set(self, handle, path, data):
+        self.check_handle(handle)
+        node = self.traverse(path)
+        node.data = data
+        node.changed(self.handle, zookeeper.CONNECTED_STATE, path)
+
+    def get_acl(self, handle, path):
+        self.check_handle(handle)
+        node = self.traverse(path)
+        return dict(aversion=node.aversion), node.acl
+
+    def set_acl(self, handle, path, aversion, acl):
+        self.check_handle(handle)
+        node = self.traverse(path)
+        if aversion != node.aversion:
+            raise zookeeper.BadVersionException("bad version")
+        node.aversion += 1
+        node.acl = acl
+
+class Node:
+    watchers = child_watchers = ()
+    flags = 0
+    aversion = 0
+    acl = zc.zk.OPEN_ACL_UNSAFE
+
+    def __init__(self, data='', **children):
+        self.data = data
+        self.children = children
+
+    def children_changed(self, handle, state, path):
+        watchers = self.child_watchers
+        self.child_watchers = ()
+        for w in watchers:
+            w(handle, zookeeper.CHILD_EVENT, state, path)
+
+    def changed(self, handle, state, path):
+        watchers = self.watchers
+        self.watchers = ()
+        for w in watchers:
+            w(handle, zookeeper.CHANGED_EVENT, state, path)
 
 def test_suite():
     return unittest.TestSuite((
         unittest.makeSuite(Tests),
-        doctest.DocFileSuite(
+        doctest.DocTestSuite(
+            setUp=setup, tearDown=zope.testing.setupstack.tearDown,
+            ),
+        manuel.testing.TestSuite(
+            manuel.doctest.Manuel(
+                checker = zope.testing.renormalizing.RENormalizing([
+                    (re.compile('pid = \d+'), 'pid = 9999')
+                    ])) + manuel.capture.Manuel(),
             'README.txt',
-            setUp=setup, tearDown=zope.testing.setupstack.tearDown
+            setUp=setup, tearDown=zope.testing.setupstack.tearDown,
             ),
         unittest.makeSuite(LoggingTests),
         ))
