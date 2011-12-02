@@ -421,6 +421,32 @@ You can't delete nodes ephemeral nodes, or nodes that contain them:
     /fooservice/providers not deleted due to ephemeral descendent.
     /fooservice not deleted due to ephemeral descendent.
 
+Symbolic links
+--------------
+
+ZooKeeper doesn't have a concept of symbolic links, but ``zc.zk``
+provides a convention for dealing with symbolic links.  When trying to
+resolve a path, if a node lacks a child, but hase a property with a
+name ending in ``' ->'``, the child will be found by following the
+path in the property value.
+
+The ``resolve`` method is used to resolve a path to a real path::
+
+    >>> zk.resolve('/lb/pools/cms/providers')
+    u'/cms/providers'
+
+In this example, the link was at the endpoint of the virtual path, but
+it could be anywhere::
+
+    >>> zk.register_server('/cms/providers', '1.2.3.4:5')
+    >>> zk.resolve('/lb/pools/cms/providers/1.2.3.4:5')
+    u'/cms/providers/1.2.3.4:5'
+
+Note a limitation of symbolic links is that they can be hidden by
+children.  For example, if we added a real node, at ``/lb/pools``
+
+``children``, ``properties``, and ``register_server`` will
+automatically use ``resolve`` to resolve paths.
 
 ``zc.zk.ZooKeeper``
 -------------------
@@ -479,6 +505,9 @@ You can't delete nodes ephemeral nodes, or nodes that contain them:
 
    The dry_run option causes a summary of what would be deleted to be
    printed without actually deleting anything.
+
+``resolve(path)``
+   Find the real path for the given path.
 
 ``register_server(path, address, **data)``
     Register a server at a path with the address.
@@ -559,7 +588,7 @@ practice, to remove a node that processes are watching.
 Changes
 -------
 
-0.2.0 (2011-12-??)
+0.2.0 (2011-12-)
 ~~~~~~~~~~~~~~~~~~
 
 - Added tree import and export.

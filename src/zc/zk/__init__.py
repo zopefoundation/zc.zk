@@ -105,6 +105,9 @@ _text_is_link = re.compile(
 class CancelWatch(Exception):
     pass
 
+class LinkLoop(Exception):
+    pass
+
 class ZooKeeper:
 
     def __init__(self, zkaddr=2181):
@@ -148,6 +151,7 @@ class ZooKeeper:
         if not isinstance(addr, str):
             addr = '%s:%s' % addr
         self.connected.wait()
+        path = self.resolve(path)
         zookeeper.create(self.handle, path + '/' + addr, encode(kw),
                          [world_permission()], zookeeper.EPHEMERAL)
 
@@ -355,6 +359,29 @@ class ZooKeeper:
     def properties(self, path):
         return Properties(self, path)
 
+    def resolve(self, path, seen=()):
+        if self.exists(path):
+            return path
+        if path in seen:
+            seen += (path,)
+            raise LinkLoop(seen)
+
+        try:
+            base, name = path.rsplit('/', 1)
+            base = self.resolve(base, seen)
+            newpath = base + '/' + name
+            if self.exists(newpath):
+                return newpath
+            props = decode(self.get(base)[0])
+            newpath = props.get(name+' ->')
+            if not newpath:
+                raise zookeeper.NoNodeException()
+
+            seen += (path,)
+            return self.resolve(newpath, seen)
+        except zookeeper.NoNodeException:
+            raise zookeeper.NoNodeException(path)
+
     def _set(self, path, data):
         self.connected.wait()
         return zookeeper.set(self.handle, path, data)
@@ -391,7 +418,7 @@ class NodeInfo:
 
     def __init__(self, session, path):
         self.session = session
-        self.path = path
+        self.path = session.resolve(path)
         self.callbacks = set()
         session._watch(self)
 

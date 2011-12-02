@@ -78,6 +78,16 @@ class Tests(unittest.TestCase):
         self.__zk = getzk.value
         self.assertEqual(self.__zk.handle, 0)
 
+        self.__teardowns = []
+        cm = mock.patch('zookeeper.exists')
+        @side_effect(cm.__enter__())
+        def exists(handle, path):
+            return True
+
+    def tearDown(self):
+        while self.__teardowns:
+            self.__teardowns.pop()()
+
     def state_side_effect(self, handle):
         self.assertEqual(handle, self.__zk.handle)
         return zookeeper.CONNECTED_STATE
@@ -488,6 +498,62 @@ def property_set_and_update_variations():
     {u'a': 2, u'b': 1, u'c': 1, u'z': 1}
     >>> data.update(dict(d=1), d=2)
     {u'a': 2, u'b': 1, u'c': 1, u'd': 2, u'z': 1}
+    """
+
+def test_resolve():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /top
+    ...  /a
+    ...    top -> /top
+    ...    loop -> /top/a/b/loop
+    ...    /b
+    ...      top -> /top
+    ...      loop -> /top/a/loop
+    ...      /c
+    ...        top -> /top
+    ...        /d
+    ...          name = 'd'
+    ...          /e
+    ...          top -> /top
+    ...          loop -> /top/a/b/c/d/loop
+    ...
+    ... ''')
+
+
+    >>> zk.resolve('/top/a/b/c/d')
+    '/top/a/b/c/d'
+
+    >>> zk.resolve('/top/a/top/a/b/top/a/b/c/top/a/b/c/d')
+    u'/top/a/b/c/d'
+
+    >>> sorted(zk.properties('/top/a/top/a/b/top/a/b/c/top/a/b/c/d').items())
+    [(u'loop ->', u'/top/a/b/c/d/loop'), (u'name', u'd'), (u'top ->', u'/top')]
+
+    >>> zk.register_server('/top/a/top/a/b/top/a/b/c/top/a/b/c/d', 'addr')
+    >>> sorted(zk.children('/top/a/top/a/b/top/a/b/c/top/a/b/c/d'))
+    [u'addr', 'e']
+
+    >>> zk.resolve('/top/a/top/a/b/top/x')
+    Traceback (most recent call last):
+      File "/usr/local/python/2.6/lib/python2.6/doctest.py", line 1253, in __run
+        compileflags, 1) in test.globs
+      File "<doctest zc.zk.tests.test_resolve[4]>", line 1, in <module>
+        zk.resolve('/top/a/top/a/b/top/x')
+      File "/Users/jim/p/zc/zk/trunk/src/zc/zk/__init__.py", line 382, in resolve
+        raise zookeeper.NoNodeException(path)
+    NoNodeException: /top/a/top/a/b/top/x
+
+    >>> zk.resolve('/top/a/b/c/d/loop')
+    Traceback (most recent call last):
+    ...
+    LinkLoop: ('/top/a/b/c/d/loop', u'/top/a/b/c/d/loop')
+
+    >>> zk.resolve('/top/a/loop/b/c/d')
+    Traceback (most recent call last):
+    ...
+    LinkLoop: ('/top/a/loop', u'/top/a/b/loop', u'/top/a/loop')
     """
 
 def assert_(cond, mess=''):
