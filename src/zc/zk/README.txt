@@ -150,7 +150,8 @@ Updating node data
 You can't set data properties, but you can update data by calling it's
 ``update`` method::
 
-    >>> data.update(threads=2, secret='123')
+    >>> thread_info = {'threads': 2}
+    >>> data.update(thread_info, secret='123')
     data updated
     database: u'/databases/foomain'
     favorite_color: u'red'
@@ -159,10 +160,14 @@ You can't set data properties, but you can update data by calling it's
 
 or by calling it's ``set`` method, which removes keys not listed::
 
-    >>> data.set(threads=3, secret='1234')
+    >>> data.set(threads= 3, secret='1234')
     data updated
     secret: u'1234'
     threads: 3
+
+Both update and set can take data from a positional data argument, or
+from keyword parameters.  Keyword parameters take precedent over the
+positional data argument.
 
 ZooKeeper Session Management
 ----------------------------
@@ -521,11 +526,20 @@ zc.zk.Properties
 Properties objects provide the usual read-only mapping methods,
 __getitem__, __len__, etc..
 
-``set(**properties)``
+``set(data=None, **properties)``
    Set the properties for the node, replacing existing data.
 
-``update(**properties)``
+   The data argument, if given, must be a dictionary or something that
+   can be passed to the ``dict`` constructor.  Items supplied as
+   keywords take precedence over items supplied in the data argument.
+
+``update(data=None, **properties)``
    Update the properties for the node.
+
+   The data argument, if given, must be a dictionary or something that
+   can be passed to a dictiomnary's ``update`` method.  Items supplied
+   as keywords take precedence over items supplied in the data
+   argument.
 
 ``__call__(callable)``
     Register a callback to be called whenever a node's properties are changed.
@@ -551,6 +565,8 @@ Changes
 - Added tree import and export.
 - Added recursive node-deletion API.
 - Added symbolic-links.
+- properties set and update methods now accept positional
+  mapping objects (or iterables of items) as well as keyword arguments.
 - Added convenience access to low-level ZooKeeper APIs.
 - Added ``OPEN_ACL_UNSAFE`` and ``READ_ACL_UNSAFE`` (in ``zc.zk``),
   which are mentioned by the ZooKeeper docs. but not included in the

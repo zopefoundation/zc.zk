@@ -19,6 +19,7 @@ import manuel.doctest
 import manuel.testing
 import mock
 import os
+import pprint
 import re
 import StringIO
 import time
@@ -462,6 +463,32 @@ def import_dry_run():
 
     """
 
+def property_set_and_update_variations():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> data = zk.properties('/fooservice')
+    >>> @data
+    ... def _(data):
+    ...     pprint.pprint(dict(data), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+
+    >>> data.set(dict(x=1))
+    {u'x': 1}
+    >>> data.set(dict(x=1), x=2, y=3)
+    {u'x': 2, u'y': 3}
+    >>> data.set(z=1)
+    {u'z': 1}
+    >>> data.update(a=1)
+    {u'a': 1, u'z': 1}
+    >>> data.update(dict(b=1), a=2)
+    {u'a': 2, u'b': 1, u'z': 1}
+    >>> data.update(dict(c=1))
+    {u'a': 2, u'b': 1, u'c': 1, u'z': 1}
+    >>> data.update(dict(d=1), d=2)
+    {u'a': 2, u'b': 1, u'c': 1, u'd': 2, u'z': 1}
+    """
 
 def assert_(cond, mess=''):
     if not cond:

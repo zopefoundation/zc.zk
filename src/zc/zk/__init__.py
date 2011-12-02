@@ -465,13 +465,17 @@ class Properties(NodeInfo, collections.Mapping):
         self.data = data
         zookeeper.set(self.session.handle, self.path, encode(data))
 
-    def set(self, **data):
+    def set(self, data=None, **properties):
+        data = data and dict(data) or {}
+        data.update(properties)
         self._set(data)
 
-    def update(self, **updates):
-        data = self.data.copy()
-        data.update(updates)
-        self._set(data)
+    def update(self, data=None, **properties):
+        d = self.data.copy()
+        if data:
+            d.update(data)
+        d.update(properties)
+        self._set(d)
 
     def __hash__(self):
         # Gaaaa, collections.Mapping
