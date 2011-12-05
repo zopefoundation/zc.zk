@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import threading
+import weakref
 import zc.thread
 import zookeeper
 
@@ -88,7 +89,10 @@ OPEN_ACL_UNSAFE = [world_permission(zookeeper.PERM_ALL)]
 READ_ACL_UNSAFE = [world_permission()]
 
 
-_text_is_node = re.compile(r'/(?P<name>\S+)$').match
+_text_is_node = re.compile(
+    r'/(?P<name>\S+)'
+    '(\s*:\s*(?P<type>\S.*))?'
+    '$').match
 _text_is_property = re.compile(
     r'(?P<name>\S+)'
     '\s*=\s*'
@@ -108,16 +112,23 @@ class CancelWatch(Exception):
 class LinkLoop(Exception):
     pass
 
+class FailedConnect(Exception):
+    pass
+
 class ZooKeeper:
 
-    def __init__(self, zkaddr=2181):
+    def __init__(self, zkaddr=2181, timeout=1):
         if isinstance(zkaddr, int):
             zkaddr = "127.0.0.1:%s" % zkaddr
+        self.timeout = timeout
         self.zkaddr = zkaddr
-        self.watches = set()
+        self.watches = WatchManager()
         self.connected = threading.Event()
-        zookeeper.init(zkaddr, self._watch_session)
-        self.connected.wait()
+        handle = zookeeper.init(zkaddr, self._watch_session)
+        self.connected.wait(timeout)
+        if not self.connected.is_set():
+            zookeeper.close(handle)
+            raise FailedConnect(zkaddr)
 
     handle = None
     def _watch_session(self, handle, event_type, state, path):
@@ -126,12 +137,8 @@ class ZooKeeper:
         if state == zookeeper.CONNECTED_STATE:
             if self.handle is None:
                 self.handle = handle
-                if self.watches:
-                    # reestablish after session reestablished
-                    watches = self.watches
-                    self.watches = set()
-                    for watch in watches:
-                        self._watch(watch, False)
+                for watch in self.watches.clear():
+                    self._watch(watch, False)
             else:
                 assert handle == self.handle
             self.connected.set()
@@ -150,34 +157,95 @@ class ZooKeeper:
         kw['pid'] = os.getpid()
         if not isinstance(addr, str):
             addr = '%s:%s' % addr
-        self.connected.wait()
+        self.connected.wait(self.timeout)
         path = self.resolve(path)
         zookeeper.create(self.handle, path + '/' + addr, encode(kw),
                          [world_permission()], zookeeper.EPHEMERAL)
 
     def _watch(self, watch, wait=True):
+        event_type = watch.event_type
         if wait:
-            self.connected.wait()
-        self.watches.add(watch)
+            self.connected.wait(self.timeout)
+        watch.real_path = real_path = self.resolve(watch.path)
+        key = event_type, real_path
+        if self.watches.add(key, watch):
+            try:
+                self._watchkey(key)
+            except zookeeper.ConnectionLossException:
+                # We lost a race here. We got disconnected between
+                # when we resolved the watch path and the time we set
+                # the watch. This is very unlikely.
+                watches = set(self.watches.pop(key))
+                for w in watches:
+                    w._deleted()
+                if watch in watches:
+                    watches.remove(watch)
+                if watches:
+                    # OMG, how unlucky can we be?
+                    # someone added a watch between the time we added
+                    # the key and failed to add the watch in zookeeper.
+                    logger.critical('lost watches %r', watches)
+                raise
+        else:
+            # We already had a watch for the key.  We need to pass this one
+            # it's data.
+            zkfunc = getattr(zookeeper, self.__zkfuncs[event_type])
+            watch._notify(zkfunc(self.handle, real_path))
 
-        def handler(h, t, state, p):
-            if watch not in self.watches:
-                return
-            assert h == self.handle
-            assert state == zookeeper.CONNECTED_STATE
-            assert p == watch.path
-            if t == zookeeper.DELETED_EVENT:
+    __zkfuncs = {
+        zookeeper.CHANGED_EVENT: 'get',
+        zookeeper.CHILD_EVENT: 'get_children',
+        }
+    def _watchkey(self, key):
+        event_type, real_path = key
+        zkfunc = getattr(zookeeper, self.__zkfuncs[event_type])
+
+        def handler(h, t, state, p, reraise=False):
+            try:
+                assert h == self.handle
+                assert state == zookeeper.CONNECTED_STATE
+                assert p == real_path
+                if key not in self.watches:
+                    return
+
+                if t == zookeeper.DELETED_EVENT:
+                    self._rewatch(key)
+                else:
+                    assert t == event_type
+                    try:
+                        v = zkfunc(self.handle, real_path, handler)
+                    except zookeeper.NoNodeException:
+                        self._rewatch(key)
+                    else:
+                        for watch in self.watches.watches(key):
+                            watch._notify(v)
+            except:
+                logger.exception("%s(%s) handler failed",
+                                 self.__zkfuncs[event_type], real_path)
+                if reraise:
+                    raise
+
+        handler(self.handle, event_type, self.state, real_path, True)
+
+    def _rewatch(self, key):
+        event_type = key[0]
+        for watch in self.watches.pop(key):
+            try:
+                real_path = self.resolve(watch.path)
+            except (zookeeper.NoNodeException, LinkLoop):
+                logger.exception("%s path went away", watch)
                 watch._deleted()
-                self.watches.remove(watch)
             else:
-                assert t == watch.event_type
-                zkfunc = getattr(zookeeper, watch.zkfunc)
-                watch._notify(zkfunc(self.handle, watch.path, handler))
-
-        handler(self.handle, watch.event_type, self.state, watch.path)
+                self._watch(watch, False)
 
     def children(self, path):
         return Children(self, path)
+
+    def get_properties(self, path):
+        return decode(self.get(path)[0])
+
+    def properties(self, path):
+        return Properties(self, path)
 
     def import_tree(self, text, path='/', trim=False, acl=OPEN_ACL_UNSAFE,
                     dry_run=False):
@@ -211,6 +279,8 @@ class ZooKeeper:
                     m = _text_is_node(data)
                     if m:
                         data = _Tree(m.group('name'))
+                        if m.group('type'):
+                            data.properties['type'] = m.group('type')
                     else:
                         if '->' in data:
                             raise ValueError(lineno, data, "Bad link format")
@@ -251,7 +321,7 @@ class ZooKeeper:
         self._import_tree(path, root, acl, trim, dry_run, True)
 
     def _import_tree(self, path, node, acl, trim, dry_run, top=False):
-        self.connected.wait()
+        self.connected.wait(self.timeout)
         if not top:
             new_children = set(node.children)
             for name in self.get_children(path):
@@ -269,6 +339,7 @@ class ZooKeeper:
             if self.exists(cpath):
                 if dry_run:
                     new = child.properties
+                    old = self.get_properties(cpath)
                     old = decode(self.get(cpath)[0])
                     for n, v in sorted(old.items()):
                         if n not in new:
@@ -325,24 +396,34 @@ class ZooKeeper:
                 logger.info('deleting %s', path)
                 self.delete(path)
 
-    def export_tree(self, path='/', ephemeral=False):
+    def export_tree(self, path='/', ephemeral=False, name=None):
         output = []
         out = output.append
+        self.connected.wait(self.timeout)
 
-        def export_tree(path, indent):
+        def export_tree(path, indent, name=None):
             children = self.get_children(path)
             if path == '/':
                 path = ''
                 if 'zookeeper' in children:
                     children.remove('zookeeper')
+                if name is not None:
+                    out(indent + '/' + name)
+                    indent += '  '
             else:
                 data, meta = self.get(path)
                 if meta['ephemeralOwner'] and not ephemeral:
                     return
-                out(indent+'/'+path.rsplit('/', 1)[1])
+                if name is None:
+                    name = path.rsplit('/', 1)[1]
+                properties = decode(data)
+                type_ = properties.pop('type', None)
+                if type_:
+                    name += ' : '+type_
+                out(indent + '/' + name)
                 indent += '  '
                 links = []
-                for i in sorted(decode(data).iteritems()):
+                for i in sorted(properties.iteritems()):
                     if i[0].endswith(' ->'):
                         links.append(i)
                     else:
@@ -353,11 +434,8 @@ class ZooKeeper:
             for name in children:
                 export_tree(path+'/'+name, indent)
 
-        export_tree(path, '')
+        export_tree(path, '', name)
         return '\n'.join(output)+'\n'
-
-    def properties(self, path):
-        return Properties(self, path)
 
     def resolve(self, path, seen=()):
         if self.exists(path):
@@ -372,7 +450,7 @@ class ZooKeeper:
             newpath = base + '/' + name
             if self.exists(newpath):
                 return newpath
-            props = decode(self.get(base)[0])
+            props = self.get_properties(base)
             newpath = props.get(name+' ->')
             if not newpath:
                 raise zookeeper.NoNodeException()
@@ -383,8 +461,17 @@ class ZooKeeper:
             raise zookeeper.NoNodeException(path)
 
     def _set(self, path, data):
-        self.connected.wait()
+        self.connected.wait(self.timeout)
         return zookeeper.set(self.handle, path, data)
+
+
+    def ln(self, target, source):
+        base, name = source.rsplit('/', 1)
+        if target[-1] == '/':
+            target += name
+        properties = self.get_properties(base)
+        properties[name+' ->'] = target
+        self._set(base, encode(properties))
 
     def close(self):
         zookeeper.close(self.handle)
@@ -413,13 +500,87 @@ for name in (
 
 del _make_method
 
+class WatchManager:
+    # Manage {key -> w{watches}} in a thread-safe manner.
+    # (And also provide a hard set to allow nodeinfos w callbacks
+    #  to keep themselves around.)
+
+    def __init__(self):
+        self.data = {}
+        self.lock = threading.Lock()
+
+        def _remove(ref, selfref=weakref.ref(self)):
+            self = selfref()
+            if self is None:
+                return
+            key = ref.key
+            with self.lock:
+                refs = self.data.get(key, ())
+                if ref in refs:
+                    refs.remove(ref)
+                    if not refs:
+                        del self.data[key]
+
+        self._remove = _remove
+
+    def __len__(self):
+        with self.lock:
+            return sum(
+                len([r for r in refs if r() is not None])
+                for refs in self.data.itervalues()
+                )
+
+    def __contains__(self, key):
+        with self.lock:
+            return key in self.data
+
+    def add(self, key, value):
+        ref = weakref.KeyedRef(value, self._remove, key)
+        newkey = False
+        with self.lock:
+            try:
+                refs = self.data[key]
+            except KeyError:
+                self.data[key] = refs = set()
+                newkey = True
+            refs.add(ref)
+        return newkey
+
+    def pop(self, key):
+        with self.lock:
+            watches = [ref() for ref in self.data.pop(key, ())]
+
+        for watch in watches:
+            if watch is not None:
+                yield watch
+
+    def watches(self, key):
+        with self.lock:
+            watches = [ref() for ref in self.data.get(key, ())]
+
+        for watch in watches:
+            if watch is not None:
+                yield watch
+
+    def clear(self):
+        # Clear data and return an iterator on the old values
+        with self.lock:
+            old = self.data
+            self.data = {}
+
+        for refs in old.itervalues():
+            for ref in refs:
+                v = ref()
+                if v is not None:
+                    yield v
+
 
 class NodeInfo:
 
     def __init__(self, session, path):
         self.session = session
-        self.path = session.resolve(path)
-        self.callbacks = set()
+        self.path = path
+        self.callbacks = []
         session._watch(self)
 
     def setData(self, data):
@@ -438,7 +599,8 @@ class NodeInfo:
                 logger.exception('Error %r calling %r', self, callback)
 
     def __repr__(self):
-        return "%s.%s(%s, %s)" % (
+        return "%s%s.%s(%s, %s)" % (
+            self.deleted and 'DELETED: ' or '',
             self.__class__.__module__, self.__class__.__name__,
             self.session.handle, self.path)
 
@@ -456,8 +618,8 @@ class NodeInfo:
 
     def __call__(self, func):
         func(self)
-        self.callbacks.add(func)
-        return func
+        self.callbacks.append(func)
+        return self
 
     def __iter__(self):
         return iter(self.data)
@@ -465,12 +627,10 @@ class NodeInfo:
 class Children(NodeInfo):
 
     event_type = zookeeper.CHILD_EVENT
-    zkfunc = 'get_children'
 
 class Properties(NodeInfo, collections.Mapping):
 
     event_type = zookeeper.CHANGED_EVENT
-    zkfunc = 'get'
 
     def setData(self, data):
         sdata, self.meta_data = data

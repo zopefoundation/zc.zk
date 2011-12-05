@@ -22,6 +22,7 @@ import os
 import pprint
 import re
 import StringIO
+import sys
 import time
 import zc.zk
 import zc.thread
@@ -59,6 +60,21 @@ class LoggingTests(unittest.TestCase):
 
 def side_effect(mock):
     return lambda func: setattr(mock, 'side_effect', func)
+
+class zklogger(object):
+
+    def __init__(self):
+        logger = logging.getLogger('zc.zk')
+        h = logging.StreamHandler(sys.stdout)
+        h.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+        logger.addHandler(h)
+        self.h = h
+        logger.setLevel(logging.DEBUG)
+
+    def uninstall(self):
+        logger = logging.getLogger('zc.zk')
+        logger.removeHandler(self.h)
+        logger.setLevel(logging.NOTSET)
 
 class Tests(unittest.TestCase):
 
@@ -118,8 +134,9 @@ class Tests(unittest.TestCase):
 
         path = '/test'
         @side_effect(get_children)
-        def _(handle, path_, handler):
-            self.__handler = handler
+        def _(handle, path_, handler=None):
+            if handler is not None:
+                self.__handler = handler
             self.assertEqual((handle, path_), (0, path))
             return data
 
@@ -135,7 +152,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(list(children), data)
 
         # callbacks are called too:
-        cb = children(mock.Mock())
+        cb = mock.Mock(); children(cb)
         cb.assert_called_with(children)
         cb.reset_mock()
         self.assertEqual(len(children.callbacks), 1)
@@ -161,7 +178,7 @@ class Tests(unittest.TestCase):
 
         # if a callback raises zc.zk.CancelWatch, the cancel is logged
         # and callback is discarded
-        cb = children(mock.Mock())
+        cb = mock.Mock(); children(cb)
         self.assertEqual(len(children.callbacks), 1)
         cb.side_effect = zc.zk.CancelWatch
         data = []
@@ -176,7 +193,7 @@ class Tests(unittest.TestCase):
         h.uninstall()
 
         # If a session expires, it will be reestablished with watches intact.
-        cb = children(mock.Mock())
+        cb = mock.Mock(); children(cb)
         self.__session_watcher(
             0, zookeeper.SESSION_EVENT, zookeeper.EXPIRED_SESSION_STATE, "")
         close.assert_called_with(0)
@@ -197,8 +214,9 @@ class Tests(unittest.TestCase):
 
         path = '/test'
         @side_effect(get)
-        def _(handle, path_, handler):
-            self.__handler = handler
+        def _(handle, path_, handler=None):
+            if handler is not None:
+                self.__handler = handler
             self.assertEqual((handle, path_), (0, path))
             return json.dumps(data), {}
 
@@ -214,11 +232,10 @@ class Tests(unittest.TestCase):
         self.assertEqual(dict(properties), data)
 
         # callbacks are called too:
-        cb = properties(mock.Mock())
+        cb = mock.Mock(); properties(cb)
         cb.assert_called_with(properties)
         cb.reset_mock()
         self.assertEqual(len(properties.callbacks), 1)
-        data = dict(a=1, b=2)
         self.__handler(0, zookeeper.CHANGED_EVENT, zookeeper.CONNECTED_STATE,
                      path)
         self.assertEqual(dict(properties), data)
@@ -240,7 +257,7 @@ class Tests(unittest.TestCase):
 
         # if a callback raises zc.zk.CancelWatch, the cancel is logged
         # and callback is discarded
-        cb = properties(mock.Mock())
+        cb = mock.Mock(); properties(cb)
         self.assertEqual(len(properties.callbacks), 1)
         cb.side_effect = zc.zk.CancelWatch
         data = {}
@@ -255,7 +272,7 @@ class Tests(unittest.TestCase):
         h.uninstall()
 
         # If a session expires, it will be reestablished with watches intact.
-        cb = properties(mock.Mock())
+        cb = mock.Mock(); properties(cb)
         self.__session_watcher(
             0, zookeeper.SESSION_EVENT, zookeeper.EXPIRED_SESSION_STATE, "")
         close.assert_called_with(0)
@@ -274,8 +291,9 @@ class Tests(unittest.TestCase):
 
         path = '/test'
         @side_effect(get)
-        def _(handle, path_, handler):
-            self.__handler = handler
+        def _(handle, path_, handler=None):
+            if handler is not None:
+                self.__handler = handler
             self.assertEqual((handle, path_), (0, path))
             return json.dumps(data), {}
 
@@ -304,8 +322,9 @@ class Tests(unittest.TestCase):
 
         path = '/test'
         @side_effect(get)
-        def _(handle, path_, handler):
-            self.__handler = handler
+        def _(handle, path_, handler=None):
+            if handler is not None:
+                self.__handler = handler
             self.assertEqual((handle, path_), (0, path))
             return data, {}
 
@@ -337,44 +356,235 @@ class Tests(unittest.TestCase):
         properties.set(string_value='xxx')
         self.assertEqual(self.__set_data, 'xxx')
 
-    @mock.patch('zookeeper.state')
-    @mock.patch('zookeeper.get')
-    @mock.patch('zookeeper.get_children')
-    def test_deleted_node_with_watchers(self, get_children, get, state):
-        state.side_effect = self.state_side_effect
-        path = '/test'
-        @side_effect(get)
-        def _(handle, path_, handler):
-            self.__get_handler = handler
-            return '{"a": 1}', {}
-        @side_effect(get_children)
-        def _(handle, path_, handler):
-            self.__child_handler = handler
-            return ['x']
+def test_children():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> children = zk.children('/test')
+    >>> sorted(children)
+    []
 
-        children = self.__zk.children(path)
-        self.assertEqual(list(children), ['x'])
-        cb = children(mock.Mock())
-        cb.side_effect = lambda x: None
-        ccb = children(mock.Mock())
-        ccb.assert_called_with(children)
+    >>> def create(path):
+    ...     zk.create(path, '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> create('/test/a')
+    >>> sorted(children)
+    ['a']
 
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), dict(a=1))
-        cb = properties(mock.Mock())
-        cb.side_effect = lambda x: None
-        pcb = properties(mock.Mock())
-        pcb.assert_called_with(properties)
+We can register callbacks:
 
-        self.__get_handler(
-            0, zookeeper.DELETED_EVENT, zookeeper.CONNECTED_STATE, path)
-        self.assertEqual(dict(properties), {})
-        pcb.assert_called_with()
+    >>> @children
+    ... def cb(c):
+    ...     print 'good', sorted(c)
+    good ['a']
 
-        self.__child_handler(
-            0, zookeeper.DELETED_EVENT, zookeeper.CONNECTED_STATE, path)
-        self.assertEqual(list(children), [])
-        ccb.assert_called_with()
+When we register a callback, it gets called immediately with a children object.
+
+    >>> create('/test/b')
+    good ['a', 'b']
+    >>> sorted(children)
+    ['a', 'b']
+
+If a callback raises an error immediately, it isn't saved:
+
+    >>> @children
+    ... def bad(c):
+    ...     raise ValueError
+    Traceback (most recent call last):
+    ...
+    ValueError
+
+    >>> create('/test/c')
+    good ['a', 'b', 'c']
+
+If a callback raises an error later, it is logged and the callback is
+cancelled:
+
+    >>> logger = zklogger()
+
+    >>> badnow = False
+    >>> @children
+    ... def bad(c):
+    ...     assert c is children
+    ...     print 'bad later', sorted(c)
+    ...     if badnow:
+    ...         raise ValueError
+    bad later ['a', 'b', 'c']
+
+    >>> zk.delete('/test/c')
+    good ['a', 'b']
+    bad later ['a', 'b']
+
+    >>> badnow = True
+    >>> zk.delete('/test/b') # doctest: +ELLIPSIS
+    good ['a']
+    bad later ['a']
+    ERROR watch(zc.zk.Children(0, /test), <function bad at ...>)
+    Traceback (most recent call last):
+    ...
+    ValueError
+
+    >>> zk.delete('/test/a')
+    good []
+
+A callback can also cancel itself by raising CancelWatch:
+
+    >>> cancelnow = False
+    >>> @children
+    ... def cancel(c):
+    ...     assert c is children
+    ...     print 'cancel later', sorted(c)
+    ...     if cancelnow:
+    ...         raise zc.zk.CancelWatch
+    cancel later []
+
+    >>> create('/test/a')
+    good ['a']
+    cancel later ['a']
+
+    >>> cancelnow = True
+    >>> create('/test/b') # doctest: +ELLIPSIS
+    good ['a', 'b']
+    cancel later ['a', 'b']
+    DEBUG cancelled watch(zc.zk.Children(0, /test), <function cancel at ...>)
+
+    >>> logger.uninstall()
+    """
+
+def test_handler_cleanup():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
+
+Children:
+
+    >>> children = zk.children('/test')
+    >>> len(zk.watches)
+    1
+    >>> del children
+    >>> len(zk.watches)
+    0
+
+    >>> children = zk.children('/test')
+    >>> @children
+    ... def kids(c):
+    ...     print c
+    zc.zk.Children(0, /test)
+    >>> len(zk.watches)
+    1
+    >>> del children
+    >>> len(zk.watches)
+    1
+    >>> del kids
+    >>> len(zk.watches)
+    0
+
+    >>> @zk.children('/test')
+    ... def kids(c):
+    ...     print c
+    zc.zk.Children(0, /test)
+
+    >>> len(zk.watches)
+    1
+    >>> del kids
+    >>> len(zk.watches)
+    0
+
+Properties:
+
+    >>> properties = zk.properties('/test')
+    >>> len(zk.watches)
+    1
+    >>> del properties
+    >>> len(zk.watches)
+    0
+
+    >>> properties = zk.properties('/test')
+    >>> @properties
+    ... def props(c):
+    ...     print c
+    zc.zk.Properties(0, /test)
+    >>> len(zk.watches)
+    1
+    >>> del properties
+    >>> len(zk.watches)
+    1
+    >>> del props
+    >>> len(zk.watches)
+    0
+
+    >>> @zk.properties('/test')
+    ... def props(c):
+    ...     print c
+    zc.zk.Properties(0, /test)
+
+    >>> len(zk.watches)
+    1
+    >>> del props
+    >>> len(zk.watches)
+    0
+
+    """
+
+def test_deleted_node_with_watchers():
+    """
+
+Set up some handlers.
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.create('/test', '{"a": 1}', zc.zk.OPEN_ACL_UNSAFE)
+
+    >>> children = zk.children('/test')
+    >>> @children
+    ... def _(arg):
+    ...     print 1, list(arg)
+    1 []
+
+    >>> @children
+    ... def _(arg=None):
+    ...     print 2, arg
+    2 zc.zk.Children(0, /test)
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    1 ['a']
+    2 zc.zk.Children(0, /test)
+
+    >>> zk.delete('/test/a')
+    1 []
+    2 zc.zk.Children(0, /test)
+
+    >>> properties = zk.properties('/test')
+    >>> @properties
+    ... def _(arg):
+    ...     print 3, dict(arg)
+    3 {u'a': 1}
+
+    >>> @properties
+    ... def _(arg=None):
+    ...     print 4, arg
+    4 zc.zk.Properties(0, /test)
+
+    >>> zk.set('/test', '{"b": 2}')
+    3 {u'b': 2}
+    4 zc.zk.Properties(0, /test)
+
+Hack data into the child watcher to verify it's cleared:
+
+    >>> children.data = 'data'
+
+Now delete the node.  The handlers that accept no arguments will be called:
+
+    >>> zk.delete('/test')
+    4 None
+    2 None
+
+Note that the handlers that accept 0 arguments were called.
+
+And the data are cleared:
+
+    >>> list(children), list(properties)
+    ([], [])
+    """
+
 
 def resilient_import():
     """
@@ -537,12 +747,7 @@ def test_resolve():
 
     >>> zk.resolve('/top/a/top/a/b/top/x')
     Traceback (most recent call last):
-      File "/usr/local/python/2.6/lib/python2.6/doctest.py", line 1253, in __run
-        compileflags, 1) in test.globs
-      File "<doctest zc.zk.tests.test_resolve[4]>", line 1, in <module>
-        zk.resolve('/top/a/top/a/b/top/x')
-      File "/Users/jim/p/zc/zk/trunk/src/zc/zk/__init__.py", line 382, in resolve
-        raise zookeeper.NoNodeException(path)
+    ...
     NoNodeException: /top/a/top/a/b/top/x
 
     >>> zk.resolve('/top/a/b/c/d/loop')
@@ -554,6 +759,29 @@ def test_resolve():
     Traceback (most recent call last):
     ...
     LinkLoop: ('/top/a/loop', u'/top/a/b/loop', u'/top/a/loop')
+    """
+
+def test_ln_target_w_trailing_slash():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.ln('/databases/main', '/fooservice/')
+    >>> pprint.pprint(zk.get_properties('/fooservice'))
+    {u' ->': u'/databases/main',
+     u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+    """
+
+def test_export_top_w_name():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> print zk.export_tree('/', name='top'),
+    /top
+      /fooservice
+        database = u'/databases/foomain'
+        favorite_color = u'red'
+        threads = 1
+        /providers
     """
 
 def assert_(cond, mess=''):
@@ -628,11 +856,12 @@ class ZooKeeper:
 
     def delete(self, handle, path):
         self.check_handle(handle)
-        self.traverse(path) # seeif it's there
+        node = self.traverse(path)
         base, name = path.rsplit('/', 1)
-        node = self.traverse(base)
-        del node.children[name]
-        node.children_changed(self.handle, zookeeper.CONNECTED_STATE, base)
+        bnode = self.traverse(base)
+        del bnode.children[name]
+        node.deleted(self.handle, zookeeper.CONNECTED_STATE, path)
+        bnode.children_changed(self.handle, zookeeper.CONNECTED_STATE, base)
 
     def exists(self, handle, path):
         self.check_handle(handle)
@@ -698,6 +927,16 @@ class Node:
         self.watchers = ()
         for w in watchers:
             w(handle, zookeeper.CHANGED_EVENT, state, path)
+
+    def deleted(self, handle, state, path):
+        watchers = self.watchers
+        self.watchers = ()
+        for w in watchers:
+            w(handle, zookeeper.DELETED_EVENT, state, path)
+        watchers = self.child_watchers
+        self.watchers = ()
+        for w in watchers:
+            w(handle, zookeeper.DELETED_EVENT, state, path)
 
 def test_suite():
     return unittest.TestSuite((
