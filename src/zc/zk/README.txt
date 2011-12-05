@@ -131,7 +131,7 @@ node data.  (ZooKeeper only stores string data for nodes. ``zc.zk``
 provides a higher-level data interface by storing JSON strings.)
 
 The properties objects can be called with callback functions and used
-as function decorators to get update notification:
+as function decorators to get update notification::
 
     >>> @zk.properties('/fooservice')
     ... def data_updated(data):
@@ -235,13 +235,13 @@ The string value is used to populate a ``type`` property.  Types are
 useful to document the kinds of services provided at a node and can be
 used by deployment tools to deploy service providers.
 
-You can import a tree definition with the ``import_tree`` method:
+You can import a tree definition with the ``import_tree`` method::
 
     >>> zk.import_tree(tree_text)
 
 This imports the tree at the top of the ZooKeeper tree.
 
-We can also export a ZooKeeper tree:
+We can also export a ZooKeeper tree::
 
     >>> print zk.export_tree(),
     /cms : z4m cms
@@ -277,7 +277,7 @@ Note that when we export a tree:
 - Each node's information is sorted by type (properties, then links,
 - then sub-nodes) and then by name,
 
-You can export just a portion of a tree:
+You can export just a portion of a tree::
 
     >>> print zk.export_tree('/fooservice'),
     /fooservice
@@ -285,7 +285,7 @@ You can export just a portion of a tree:
       threads = 3
       /providers
 
-You can optionally see ephemeral nodes:
+You can optionally see ephemeral nodes::
 
     >>> print zk.export_tree('/fooservice', ephemeral=True),
     /fooservice
@@ -325,7 +325,7 @@ and re-import::
     extra path not trimmed: /lb/pools/retail
 
 We got a warning about nodes left over from the old tree.  We can see
-this if we export the tree:
+this if we export the tree::
 
     >>> print zk.export_tree(),
     /cms : z4m cms
@@ -361,7 +361,7 @@ to do::
     >>> zk.import_tree(tree_text, trim=True, dry_run=True)
     would delete /lb/pools/retail.
 
-That's what we'd expect, so we go ahead:
+That's what we'd expect, so we go ahead::
 
     >>> zk.import_tree(tree_text, trim=True)
     >>> print zk.export_tree(),
@@ -421,7 +421,7 @@ delete_recursive::
           address = u'1.2.3.4:80'
           providers -> /cms/providers
 
-You can't delete nodes ephemeral nodes, or nodes that contain them:
+You can't delete nodes ephemeral nodes, or nodes that contain them::
 
     >>> zk.delete_recursive('/fooservice')
     Not deleting /fooservice/providers/192.168.0.42:8080 because it's ephemeral.
@@ -495,7 +495,7 @@ Now, we'll create a databases node::
     >>> zk.create('/databases', '', zc.zk.OPEN_ACL_UNSAFE)
     '/databases'
 
-And import the export:
+And import the export::
 
     >>> zk.import_tree(export, '/databases')
     >>> print zk.export_tree('/databases'),
@@ -527,7 +527,7 @@ be updated::
     u'/databases/cms'
 
 If we update ``/databases/cms``, ``main_children`` will see the
-updates:
+updates::
 
     >>> sorted(main_children)
     ['providers']
