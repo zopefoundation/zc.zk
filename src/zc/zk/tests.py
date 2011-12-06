@@ -32,15 +32,6 @@ import zope.testing.loggingsupport
 import zope.testing.renormalizing
 import unittest
 
-def wait_until(func, timeout=9):
-    if func():
-        return
-    deadline = time.time()+timeout
-    while not func():
-        time.sleep(.01)
-        if time.time() > deadline:
-            raise AssertionError('timeout')
-
 class LoggingTests(unittest.TestCase):
 
     def test_logging(self):
@@ -54,7 +45,7 @@ class LoggingTests(unittest.TestCase):
             zookeeper.close(handle)
         except:
             pass
-        wait_until(lambda : 'environment' in f.getvalue())
+        zc.zk.testing.wait_until(lambda : 'environment' in f.getvalue())
         logger.setLevel(logging.NOTSET)
         logger.removeHandler(h)
 
@@ -85,7 +76,7 @@ class Tests(unittest.TestCase):
             zk = zc.zk.ZooKeeper()
             return zk
 
-        wait_until(lambda : init.call_args)
+        zc.zk.testing.wait_until(lambda : init.call_args)
         (zkaddr, self.__session_watcher), kw = init.call_args
         self.assertEqual((zkaddr, kw), ('127.0.0.1:2181', {}))
         self.__session_watcher(

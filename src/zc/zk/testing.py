@@ -33,6 +33,19 @@ def assert_(cond, mess=''):
     if not cond:
         print 'assertion failed: ', mess
 
+def wait_until(func=None, timeout=9):
+    """Wait until a function returns true.
+
+    Raise an AssertionError on timeout.
+    """
+    if func():
+        return
+    deadline = time.time()+timeout
+    while not func():
+        time.sleep(.01)
+        if time.time() > deadline:
+            raise AssertionError('timeout')
+
 def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     """Set up zookeeper emulation.
 
