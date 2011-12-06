@@ -735,6 +735,10 @@ Changes
 0.3.0 (2011-12-??)
 ------------------
 
+- Added a testing module that provides ZooKeeper emulation for
+  testing complex interactions with zc.zk without needing a running
+  ZooKeeper server.
+
 - `zc.zk.Children`_ objects now have a __len__, which is mainly useful
   for testing whether they are empty.
 
