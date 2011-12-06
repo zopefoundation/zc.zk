@@ -11,17 +11,44 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
+"""Testing support
+
+This module provides a mock of zookeeper needed to test use of zc.zk.
+It's especially useful for testing packages that build on zc.zk.
+
+It provides setUp and tearDown functions that can be used with
+doctests or with regular ```unittest`` tests.
+"""
 import json
 import mock
 import time
 import zc.zk
 import zookeeper
 
+__all__ = ['assert_', 'setUp', 'tearDown']
+
 def assert_(cond, mess=''):
+    """A simple assertion function for use in tests.
+    """
     if not cond:
         print 'assertion failed: ', mess
 
 def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
+    """Set up zookeeper emulation.
+
+    The first argument is a test case object (either doctest or unittest).
+
+    You can optionally pass:
+
+    tree
+       An initial ZooKeeper tree expressed as an import string.
+       If not passed, an initial tree will be created with examples
+       used in the zc.zk doctests.
+
+    connection_string
+       The connection string to use for the emulation server. This
+       defaults to 'zookeeper.example.com:2181'.
+    """
     if tree:
         zk = ZooKeeper(connection_string, Node())
     else:
@@ -56,6 +83,10 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     getattr(test, 'globs', test.__dict__)['zc.zk.testing'] = teardowns
 
 def tearDown(test):
+    """The matching tearDown for setUp.
+
+    The single argument is the test case passed to setUp.
+    """
     globs = getattr(test, 'globs', test.__dict__)
     for cm in globs['zc.zk.testing']:
         cm()

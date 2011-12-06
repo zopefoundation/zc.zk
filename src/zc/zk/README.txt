@@ -558,8 +558,8 @@ been registered, they will be called without arguments, if possible.
 It would be bad, in practice, to remove a node that processes are
 watching.
 
-``zc.zk.ZooKeeper``
--------------------
+zc.zk.ZooKeeper
+---------------
 
 ``zc.zk.ZooKeeper(connection_string)``
     Return a new instance given a ZooKeeper connection string.
@@ -728,6 +728,21 @@ __getitem__, __len__, etc..
     changed.
 
     The ``Properties`` instance is returned.
+
+Testing support
+---------------
+
+The ``zc.zk.testing`` module provides ``setUp`` and ``tearDown``
+functions that can be used to emulate a ZooKeeper server. To find out
+more, use the help function::
+
+    >>> import zc.zk.testing
+    >>> help(zc.zk.testing)
+
+.. -> ignore
+
+    >>> import zc.zk.testing
+
 
 Changes
 -------
