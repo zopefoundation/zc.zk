@@ -57,9 +57,8 @@ a service path and the address a server is listing on::
 .. test
 
    >>> import os
-   >>> zc.zk.decode(ZooKeeper.get(
-   ...     0, '/fooservice/providers/192.168.0.42:8080')[0]
-   ...     ) == dict(pid=os.getpid())
+   >>> zk.get_properties('/fooservice/providers/192.168.0.42:8080'
+   ...                   ) == dict(pid=os.getpid())
    True
 
 
