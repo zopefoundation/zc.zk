@@ -628,6 +628,9 @@ class Children(NodeInfo):
 
     event_type = zookeeper.CHILD_EVENT
 
+    def __len__(self):
+        return len(self.data)
+
 class Properties(NodeInfo, collections.Mapping):
 
     event_type = zookeeper.CHANGED_EVENT

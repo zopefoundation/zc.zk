@@ -95,6 +95,11 @@ updated when new providers are registered::
     >>> sorted(addresses)
     ['192.168.0.42:8080', '192.168.0.42:8081']
 
+You can also get the number of children with ``len``:
+
+    >>> len(addresses)
+    2
+
 You can call the iterable with a callback function that is called
 whenever the list of children changes::
 
@@ -726,6 +731,13 @@ __getitem__, __len__, etc..
 
 Changes
 -------
+
+0.3.0 (2011-12-??)
+------------------
+
+- `zc.zk.Children`_ objects now have a __len__, which is mainly useful
+  for testing whether they are empty.
+
 
 0.2.0 (2011-12-05)
 ~~~~~~~~~~~~~~~~~~

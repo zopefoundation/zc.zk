@@ -364,11 +364,21 @@ def test_children():
     >>> sorted(children)
     []
 
+    >>> len(children)
+    0
+    >>> bool(children)
+    False
+
     >>> def create(path):
     ...     zk.create(path, '', zc.zk.OPEN_ACL_UNSAFE)
     >>> create('/test/a')
     >>> sorted(children)
     ['a']
+
+    >>> len(children)
+    1
+    >>> bool(children)
+    True
 
 We can register callbacks:
 
@@ -395,6 +405,11 @@ If a callback raises an error immediately, it isn't saved:
 
     >>> create('/test/c')
     good ['a', 'b', 'c']
+
+    >>> len(children)
+    3
+    >>> bool(children)
+    True
 
 If a callback raises an error later, it is logged and the callback is
 cancelled:
