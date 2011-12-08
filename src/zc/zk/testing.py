@@ -72,41 +72,34 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
        The connection string to use for the emulation server. This
        defaults to 'zookeeper.example.com:2181'.
     """
-    if tree:
-        zk = ZooKeeper(connection_string, Node())
-    else:
-        zk = ZooKeeper(
-            connection_string,
-            Node(
-                fooservice = Node(
-                    json.dumps(dict(
-                        database = "/databases/foomain",
-                        threads = 1,
-                        favorite_color= "red",
-                        )),
-                    providers = Node()
-                    ),
-                zookeeper = Node('', quota=Node()),
-                ),
-            )
+    faux_zookeeper = ZooKeeper(
+        connection_string, Node(zookeeper = Node('', quota=Node())))
+
     teardowns = []
     for name in ZooKeeper.__dict__:
         if name[0] == '_':
             continue
         cm = mock.patch('zookeeper.'+name)
         m = cm.__enter__()
-        m.side_effect = getattr(zk, name)
+        m.side_effect = getattr(faux_zookeeper, name)
         teardowns.append(cm.__exit__)
 
-    if tree:
-        zk = zc.zk.ZooKeeper(connection_string)
-        zk.import_tree(tree)
-        zk.close()
+    zk = zc.zk.ZooKeeper(connection_string)
+    if not tree:
+        tree = """
+        /fooservice
+          database = '/databases/foomain'
+          threads = 1
+          favorite_color = 'red'
+          /providers
+        """
+    zk.import_tree(tree)
+    zk.close()
 
     globs = getattr(test, 'globs', test.__dict__)
     globs['wait_until'] = wait_until
     globs['zc.zk.testing'] = teardowns
-    globs['ZooKeeper'] = zk
+    globs['ZooKeeper'] = faux_zookeeper
     globs.setdefault('assert_', assert_)
 
 def tearDown(test):
