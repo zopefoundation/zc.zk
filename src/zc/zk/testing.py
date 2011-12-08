@@ -21,6 +21,8 @@ doctests or with regular ```unittest`` tests.
 """
 import json
 import mock
+import os
+import random
 import sys
 import threading
 import time
@@ -29,7 +31,7 @@ import zc.zk
 import zc.thread
 import zookeeper
 
-__all__ = ['assert_', 'setUp', 'tearDown']
+__all__ = ['assert_', 'setUp', 'tearDown', 'testing_with_real_zookeeper']
 
 def assert_(cond, mess='', error=True):
     """A simple assertion function.
@@ -56,8 +58,32 @@ def wait_until(func=None, timeout=9):
         if time.time() > deadline:
             raise AssertionError('timeout')
 
+def setup_tree(tree, connection_string, root='/test-root'):
+    zk = zc.zk.ZooKeeper(connection_string)
+    if zk.exists(root):
+        zk.delete_recursive(root)
+    zk.create(root, '', zc.zk.OPEN_ACL_UNSAFE)
+    zk.import_tree(tree or """
+    /fooservice
+      /providers
+      database = '/databases/foomain'
+      threads = 1
+      favorite_color = 'red'
+    """, root)
+    zk.close()
+
+def testing_with_real_zookeeper():
+    """Test whether we're testing with a real ZooKeeper server.
+
+    The real connection string is returned.
+    """
+    return os.environ.get('TEST_ZOOKEEPER_CONNECTION')
+
 def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     """Set up zookeeper emulation.
+
+    Standard (mock) testing
+    -----------------------
 
     The first argument is a test case object (either doctest or unittest).
 
@@ -71,42 +97,80 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     connection_string
        The connection string to use for the emulation server. This
        defaults to 'zookeeper.example.com:2181'.
-    """
-    if tree:
-        zk = ZooKeeper(connection_string, Node())
-    else:
-        zk = ZooKeeper(
-            connection_string,
-            Node(
-                fooservice = Node(
-                    json.dumps(dict(
-                        database = "/databases/foomain",
-                        threads = 1,
-                        favorite_color= "red",
-                        )),
-                    providers = Node()
-                    ),
-                zookeeper = Node('', quota=Node()),
-                ),
-            )
-    teardowns = []
-    for name in ZooKeeper.__dict__:
-        if name[0] == '_':
-            continue
-        cm = mock.patch('zookeeper.'+name)
-        m = cm.__enter__()
-        m.side_effect = getattr(zk, name)
-        teardowns.append(cm.__exit__)
 
-    if tree:
-        zk = zc.zk.ZooKeeper(connection_string)
-        zk.import_tree(tree)
-        zk.close()
+    Testing with a real ZooKeeper Server
+    ------------------------------------
+
+    You can test against a real ZooKeeper server, instead of a mock by
+    setting the environment variable TEST_ZOOKEEPER_CONNECTION to the
+    connection string of a test server.
+
+    The tests will create a top-level node with a random name that
+    starts with 'zc.zk.testing.test-roo', and use that as the virtual
+    root for your tests.  Although this is the virtual root, of the
+    zookeeper tree in your tests, the presense of the node may be
+    shown in your tests. In particularm ``zookeeper.create`` returns
+    the path created and the string returned is real, not virtual.
+    This node is cleaned up by the ``tearDown``.
+    """
 
     globs = getattr(test, 'globs', test.__dict__)
+    teardowns = []
+    faux_zookeeper = None
+    real_zk = testing_with_real_zookeeper()
+    if real_zk:
+        test_root = '/zc.zk.testing.test-root%s' % random.randint(0, sys.maxint)
+        globs['/zc.zk.testing.test-root'] = test_root
+        setup_tree(tree, real_zk, test_root)
+
+        orig_init = zookeeper.init
+        cm = mock.patch('zookeeper.init')
+        m = cm.__enter__()
+        def init(addr, watch=None):
+            assert_(addr==connection_string,
+                    "%r != %r" % (addr, connection_string))
+            return orig_init(real_zk+test_root, watch, 1000)
+        m.side_effect = init
+        teardowns.append(cm.__exit__)
+
+        teardowns.append(lambda : setattr(zc.zk.ZooKeeper, 'test_sleep', 0))
+        zc.zk.ZooKeeper.test_sleep = .01
+        time.sleep(float(os.environ.get('TEST_ZOOKEEPER_SLEEP', 0)))
+
+    else:
+        if tree:
+            faux_zookeeper = ZooKeeper(connection_string, Node())
+        else:
+            faux_zookeeper = ZooKeeper(
+                connection_string,
+                Node(
+                    fooservice = Node(
+                        json.dumps(dict(
+                            database = "/databases/foomain",
+                            threads = 1,
+                            favorite_color= "red",
+                            )),
+                        providers = Node()
+                        ),
+                    zookeeper = Node('', quota=Node()),
+                    ),
+                )
+        for name in ZooKeeper.__dict__:
+            if name[0] == '_':
+                continue
+            cm = mock.patch('zookeeper.'+name)
+            m = cm.__enter__()
+            m.side_effect = getattr(faux_zookeeper, name)
+            teardowns.append(cm.__exit__)
+
+        if tree:
+            zk = zc.zk.ZooKeeper(connection_string)
+            zk.import_tree(tree)
+            zk.close()
+
     globs['wait_until'] = wait_until
     globs['zc.zk.testing'] = teardowns
-    globs['ZooKeeper'] = zk
+    globs['ZooKeeper'] = faux_zookeeper
     globs.setdefault('assert_', assert_)
 
 def tearDown(test):
@@ -117,6 +181,14 @@ def tearDown(test):
     globs = getattr(test, 'globs', test.__dict__)
     for cm in globs['zc.zk.testing']:
         cm()
+    real_zk = testing_with_real_zookeeper()
+    if real_zk:
+        zk = zc.zk.ZooKeeper(real_zk)
+        root = globs['/zc.zk.testing.test-root']
+        if zk.exists(root):
+            zk.delete_recursive(root)
+        zk.close()
+
 
 class Session:
 
@@ -221,9 +293,9 @@ class ZooKeeper:
 
     def _clear_session(self, session):
         with self.lock:
+            self.root.clear_watchers(session.handle)
             for path in list(session.nodes):
                 self._delete(session.handle, path)
-            self.root.clear_watchers(session.handle)
 
     def _doasync(self, completion, handle, nreturn, func, *args):
         if completion is None:
@@ -302,6 +374,7 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             self._delete(handle, path, version)
+        return 0
 
     def adelete(self, handle, path, version=-1, completion=None):
         return self._doasync(completion, handle, 0,
@@ -385,7 +458,7 @@ class ZooKeeper:
             return 0
 
     def aset_acl(self, handle, path, aversion, acl, completion=None):
-        return self._doasync(completion, handle, (1, 0),
+        return self._doasync(completion, handle, 0,
                              self.set_acl, handle, path, aversion, acl)
 
 class Node:

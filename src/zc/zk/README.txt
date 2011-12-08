@@ -521,6 +521,7 @@ updates::
     >>> sorted(main_children)
     ['providers']
     >>> zk.delete('/databases/cms/providers')
+    0
     >>> sorted(main_children)
     []
 
@@ -790,3 +791,7 @@ Changes
 ~~~~~~~~~~~~~~~~~~
 
 Initial release
+
+.. test cleanup
+
+   >>> zk.close()

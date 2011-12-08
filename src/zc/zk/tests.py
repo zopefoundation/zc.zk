@@ -417,12 +417,12 @@ cancelled:
     ...         raise ValueError
     bad later ['a', 'b', 'c']
 
-    >>> zk.delete('/test/c')
+    >>> _ = zk.delete('/test/c')
     good ['a', 'b']
     bad later ['a', 'b']
 
     >>> badnow = True
-    >>> zk.delete('/test/b') # doctest: +ELLIPSIS
+    >>> _ = zk.delete('/test/b') # doctest: +ELLIPSIS
     good ['a']
     bad later ['a']
     ERROR watch(zc.zk.Children(0, /test), <function bad at ...>)
@@ -430,7 +430,7 @@ cancelled:
     ...
     ValueError
 
-    >>> zk.delete('/test/a')
+    >>> _ = zk.delete('/test/a')
     good []
 
 A callback can also cancel itself by raising CancelWatch:
@@ -455,6 +455,9 @@ A callback can also cancel itself by raising CancelWatch:
     DEBUG cancelled watch(zc.zk.Children(0, /test), <function cancel at ...>)
 
     >>> logger.uninstall()
+
+    >>> zk.close()
+
     """
 
 def test_handler_cleanup():
@@ -530,6 +533,8 @@ Properties:
     >>> len(zk.watches)
     0
 
+    >>> zk.close()
+
     """
 
 def test_deleted_node_with_watchers():
@@ -555,7 +560,7 @@ Set up some handlers.
     1 ['a']
     2 zc.zk.Children(0, /test)
 
-    >>> zk.delete('/test/a')
+    >>> _ = zk.delete('/test/a')
     1 []
     2 zc.zk.Children(0, /test)
 
@@ -581,7 +586,7 @@ Hack data into the child watcher to verify it's cleared:
 
 Now delete the node.  The handlers that accept no arguments will be called:
 
-    >>> zk.delete('/test')
+    >>> _ = zk.delete('/test')
     4 None
     2 None
 
@@ -591,6 +596,8 @@ And the data are cleared:
 
     >>> list(children), list(properties)
     ([], [])
+
+    >>> zk.close()
     """
 
 
@@ -643,6 +650,8 @@ When an expression is messed up, we get sane errors:
     ... ''') # doctest: +NORMALIZE_WHITESPACE
     Traceback (most recent call last):
     ValueError: (3, 'a -> 1', 'Bad link format')
+
+    >>> zk.close()
     """
 
 def import_dry_run():
@@ -689,6 +698,7 @@ def import_dry_run():
         /c12
       /c2
 
+    >>> zk.close()
     """
 
 def property_set_and_update_variations():
@@ -716,6 +726,8 @@ def property_set_and_update_variations():
     {u'a': 2, u'b': 1, u'c': 1, u'z': 1}
     >>> data.update(dict(d=1), d=2)
     {u'a': 2, u'b': 1, u'c': 1, u'd': 2, u'z': 1}
+
+    >>> zk.close()
     """
 
 def test_resolve():
@@ -750,8 +762,8 @@ def test_resolve():
     [(u'loop ->', u'/top/a/b/c/d/loop'), (u'name', u'd'), (u'top ->', u'/top')]
 
     >>> zk.register_server('/top/a/top/a/b/top/a/b/c/top/a/b/c/d', 'addr')
-    >>> sorted(zk.children('/top/a/top/a/b/top/a/b/c/top/a/b/c/d'))
-    [u'addr', 'e']
+    >>> sorted(map(str, zk.children('/top/a/top/a/b/top/a/b/c/top/a/b/c/d')))
+    ['addr', 'e']
 
     >>> zk.resolve('/top/a/top/a/b/top/x')
     Traceback (most recent call last):
@@ -767,6 +779,8 @@ def test_resolve():
     Traceback (most recent call last):
     ...
     LinkLoop: ('/top/a/loop', u'/top/a/b/loop', u'/top/a/loop')
+
+    >>> zk.close()
     """
 
 def test_ln_target_w_trailing_slash():
@@ -778,6 +792,8 @@ def test_ln_target_w_trailing_slash():
      u'database': u'/databases/foomain',
      u'favorite_color': u'red',
      u'threads': 1}
+
+    >>> zk.close()
     """
 
 def test_export_top_w_name():
@@ -790,126 +806,8 @@ def test_export_top_w_name():
         favorite_color = u'red'
         threads = 1
         /providers
-    """
 
-def test_recovery_of_servers_on_session_reestablishment():
-    """
-
-First, a basic test:
-
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.register_server('/fooservice/providers', 'test')
-    >>> zk.get_children('/fooservice/providers')
-    ['test']
-
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-
-    >>> zk.get_children('/fooservice/providers')
-    ['test']
-
-Now, some variations.
-
-If the node is deleted, we don't recreate it:
-
-    >>> zk.delete('/fooservice/providers/test')
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_children('/fooservice/providers')
-    []
-
-First, some non-standard data and acl:
-
-    >>> acl = [zc.zk.world_permission(3)]
-    >>> zk.register_server('/fooservice/providers', 'test', acl, a=1)
-    >>> zk.print_tree('/fooservice/providers')
-    /providers
-      /test
-        a = 1
-        pid = 362
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.print_tree('/fooservice/providers')
-    /providers
-      /test
-        a = 1
-        pid = 362
-
-    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
-    True
-
-Delete again:
-
-    >>> zk.delete('/fooservice/providers/test')
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_children('/fooservice/providers')
-    []
-
-Let's use the low-level creation api:
-
-    >>> zk.create('/fooservice/providers/test', 'x', acl, zookeeper.EPHEMERAL)
-    '/fooservice/providers/test'
-
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
-    True
-    >>> zk.get('/fooservice/providers/test')[0]
-    'x'
-
-We track changes:
-
-    >>> _ = zk.set('/fooservice/providers/test', 'y')
-    >>> acl2 = [zc.zk.world_permission(4)]
-    >>> _ = zk.set_acl('/fooservice/providers/test', 0, acl2)
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_acl('/fooservice/providers/test')[1] == acl2
-    True
-    >>> zk.get('/fooservice/providers/test')[0]
-    'y'
-
-Delete again:
-
-    >>> zk.delete('/fooservice/providers/test')
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_children('/fooservice/providers')
-    []
-
-Let's do it all asyncronously :)
-
-    >>> zk.acreate('/fooservice/providers/test', 'x', acl, zookeeper.EPHEMERAL,
-    ...             check_async(0))
-    0
-    >>> event.wait(1); assert_(event.is_set(), error=False)
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
-    True
-    >>> zk.get('/fooservice/providers/test')[0]
-    'x'
-
-    >>> zk.aset('/fooservice/providers/test', 'y', -1, check_async(0))
-    0
-    >>> event.wait(1); assert_(event.is_set())
-    >>> acl2 = [zc.zk.world_permission(4)]
-    >>> _ = zk.aset_acl('/fooservice/providers/test', 0, acl2, check_async(0))
-    >>> event.wait(1); assert_(event.is_set())
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_acl('/fooservice/providers/test')[1] == acl2
-    True
-    >>> zk.get('/fooservice/providers/test')[0]
-    'y'
-
-    >>> _ = zk.adelete('/fooservice/providers/test', -1, check_async(0))
-    >>> event.wait(1); assert_(event.is_set())
-    >>> ZooKeeper.sessions[zk.handle].disconnect()
-    >>> ZooKeeper.sessions[zk.handle].expire()
-    >>> zk.get_children('/fooservice/providers')
-    []
+    >>> zk.close()
     """
 
 def test_set():
@@ -953,8 +851,12 @@ def test_set():
     >>> r
     0
 
+>>> time.sleep(1)
+
     >>> zk.get('/')[0]
     'd'
+
+    >>> zk.close()
     """
 
 def test_delete():
@@ -974,21 +876,21 @@ Synchronous variations:
 
     >>> zk.get_children('/test')
     ['a']
-    >>> zk.delete('/test/a', 2)
+    >>> _ = zk.delete('/test/a', 2)
     >>> zk.get_children('/test')
     []
 
     >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
     >>> _ = zk.set('/test/a', '1')
     >>> _ = zk.set('/test/a', '2')
-    >>> zk.delete('/test/a', -1)
+    >>> _ = zk.delete('/test/a', -1)
     >>> zk.get_children('/test')
     []
 
     >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
     >>> _ = zk.set('/test/a', '1')
     >>> _ = zk.set('/test/a', '2')
-    >>> zk.delete('/test/a')
+    >>> _ = zk.delete('/test/a')
     >>> zk.get_children('/test')
     []
 
@@ -1028,6 +930,7 @@ Asynchronous variations:
     >>> r, zk.get_children('/test')
     (0, [])
 
+    >>> zk.close()
     """
 
 def test_set_acl():
@@ -1036,35 +939,37 @@ def test_set_acl():
     >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
     >>> zk.get_acl('/test')[1] == zc.zk.OPEN_ACL_UNSAFE
     True
-    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(1)])
+    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(17)])
     0
-    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(1)]
+    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(17)]
     True
 
-    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(1)])
+    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(17)])
     Traceback (most recent call last):
     ...
     BadVersionException: bad version
 
-    >>> zk.set_acl('/test', 1, [zc.zk.world_permission(2)])
+    >>> zk.set_acl('/test', 1, [zc.zk.world_permission(18)])
     0
-    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(2)]
+    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(18)]
     True
 
-    >>> r = zk.aset_acl('/test', 0, [zc.zk.world_permission(3)],
+    >>> r = zk.aset_acl('/test', 0, [zc.zk.world_permission(19)],
     ...                 check_async(expected_status=zookeeper.BADVERSION)
     ...                 ); event.wait(1)
     async callback got ()
     >>> r
     0
 
-    >>> r = zk.aset_acl('/test', 2, [zc.zk.world_permission(3)],
+    >>> r = zk.aset_acl('/test', 2, [zc.zk.world_permission(19)],
     ...                 check_async()); event.wait(1)
-    async callback got (0,)
+    async callback got ()
     >>> r
     0
-    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(3)]
+    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(19)]
     True
+
+    >>> zk.close()
     """
 
 event = threading.Event()
@@ -1080,20 +985,35 @@ def check_async(show=True, expected_status=0):
             error=False)
     return check
 
+def setUpEphemeral_node_recovery_on_session_reestablishment(test):
+    zc.zk.testing.setUp(test)
+    test.globs['check_async'] = check_async
+    test.globs['event'] = event
+
 def test_suite():
     checker = zope.testing.renormalizing.RENormalizing([
-        (re.compile('pid = \d+'), 'pid = 9999')
+        (re.compile('pid = \d+'), 'pid = 9999'),
+        (re.compile('/zc\.zk\.testing\.test-root\d+'), ''),
+        (re.compile(r'2 None\n4 None'), '4 None\n2 None'),
         ])
-    return unittest.TestSuite((
-        unittest.makeSuite(Tests),
-        doctest.DocTestSuite(
-            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
-            checker=checker,
-            ),
+    suite = unittest.TestSuite((
         manuel.testing.TestSuite(
             manuel.doctest.Manuel(checker=checker) + manuel.capture.Manuel(),
             'README.txt',
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
             ),
-        unittest.makeSuite(LoggingTests),
+        doctest.DocTestSuite(
+            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            checker=checker,
+            ),
         ))
+    if not zc.zk.testing.testing_with_real_zookeeper():
+        suite.addTest(unittest.makeSuite(Tests))
+        suite.addTest(unittest.makeSuite(LoggingTests))
+        suite.addTest(doctest.DocFileSuite(
+            'ephemeral_node_recovery_on_session_reestablishment.test',
+            setUp=setUpEphemeral_node_recovery_on_session_reestablishment,
+            tearDown=zc.zk.testing.tearDown,
+            checker=checker,
+            ))
+    return suite

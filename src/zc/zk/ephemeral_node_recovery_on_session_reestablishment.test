@@ -1,0 +1,121 @@
+Test to make sure we recreate ephemeral nodes when we reestablish sessions
+===========================================================================
+
+First, a basic test:
+
+    >>> import zc.zk, zookeeper
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice/providers', 'test')
+    >>> zk.get_children('/fooservice/providers')
+    ['test']
+
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+
+    >>> zk.get_children('/fooservice/providers')
+    ['test']
+
+Now, some variations.
+
+If the node is deleted, we don't recreate it:
+
+    >>> _ = zk.delete('/fooservice/providers/test')
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+First, some non-standard data and acl:
+
+    >>> acl = [zc.zk.world_permission(3)]
+    >>> zk.register_server('/fooservice/providers', 'test', acl, a=1)
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /test
+        a = 1
+        pid = 362
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /test
+        a = 1
+        pid = 362
+
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
+    True
+
+Delete again:
+
+    >>> _ = zk.delete('/fooservice/providers/test')
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+Let's use the low-level creation api:
+
+    >>> zk.create('/fooservice/providers/test', 'x', acl, zookeeper.EPHEMERAL)
+    '/fooservice/providers/test'
+
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'x'
+
+We track changes:
+
+    >>> _ = zk.set('/fooservice/providers/test', 'y')
+    >>> acl2 = [zc.zk.world_permission(4)]
+    >>> _ = zk.set_acl('/fooservice/providers/test', 0, acl2)
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl2
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'y'
+
+Delete again:
+
+    >>> _ = zk.delete('/fooservice/providers/test')
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+Let's do it all asyncronously :)
+
+    >>> zk.acreate('/fooservice/providers/test', 'x', acl, zookeeper.EPHEMERAL,
+    ...             check_async(0))
+    0
+    >>> event.wait(1); assert_(event.is_set(), error=False)
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'x'
+
+    >>> zk.aset('/fooservice/providers/test', 'y', -1, check_async(0))
+    0
+    >>> event.wait(1); assert_(event.is_set())
+    >>> acl2 = [zc.zk.world_permission(4)]
+    >>> _ = zk.aset_acl('/fooservice/providers/test', 0, acl2, check_async(0))
+    >>> event.wait(1); assert_(event.is_set())
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl2
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'y'
+
+    >>> _ = zk.adelete('/fooservice/providers/test', -1, check_async(0))
+    >>> event.wait(1); assert_(event.is_set())
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+    >>> zk.close()

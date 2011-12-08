@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import threading
+import time
 import weakref
 import zc.thread
 import zookeeper
@@ -168,12 +169,14 @@ class ZooKeeper:
         path = self.resolve(path)
         self.create(path + '/' + addr, encode(kw), acl, zookeeper.EPHEMERAL)
 
-
+    test_sleep = 0
     def _async(self, completion, meth, *args):
         post = getattr(self, '_post_'+meth)
         if completion is None:
             result = getattr(zookeeper, meth)(self.handle, *args)
             post(*args)
+            if self.test_sleep:
+                time.sleep(self.test_sleep)
             return result
 
         def asynccb(handle, status, *cargs):
@@ -429,7 +432,7 @@ class ZooKeeper:
             self._import_tree(cpath, child, acl, trim, dry_run)
 
     def delete_recursive(self, path, dry_run=False):
-        for name in self.get_children(path):
+        for name in sorted(self.get_children(path)):
             self.delete_recursive(join(path, name))
 
         if self.get_children(path):
@@ -484,7 +487,7 @@ class ZooKeeper:
                 for i in links:
                     out(indent+"%s %s" % i)
 
-            for name in children:
+            for name in sorted(children):
                 export_tree(path+'/'+name, indent)
 
         export_tree(path, '', name)
