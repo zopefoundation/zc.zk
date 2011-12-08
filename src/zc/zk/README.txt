@@ -175,21 +175,6 @@ Both ``update`` and ``set`` can take data from a positional data argument, or
 from keyword parameters.  Keyword parameters take precedent over the
 positional data argument.
 
-ZooKeeper Session Management
-----------------------------
-
-``zc.zk`` takes care of ZooKeeper session management for you. It
-establishes and, if necessary, reestablishes sessions for you.  In
-particular, it takes care of reestablishing ZooKeeper watches when a
-session is reestablished.
-
-ZooKeeper logging
------------------
-
-``zc.zk`` bridges the low-level ZooKeeper logging API and the Python
-logging API.  ZooKeeper log messages are forwarded to the Python
-``'ZooKeeper'`` logger.
-
 Tree-definition format, import, and export
 ------------------------------------------
 
@@ -329,7 +314,7 @@ and re-import::
     extra path not trimmed: /lb/pools/retail
 
 We got a warning about nodes left over from the old tree.  We can see
-this if we export the tree::
+this if we look at the tree::
 
     >>> print zk.export_tree(),
     /cms : z4m cms
@@ -558,6 +543,27 @@ been registered, they will be called without arguments, if possible.
 It would be bad, in practice, to remove a node that processes are
 watching.
 
+ZooKeeper Session Management
+----------------------------
+
+``zc.zk`` takes care of ZooKeeper session management for you. It
+establishes and, if necessary, reestablishes sessions for you.  In
+particular, it takes care of reestablishing ZooKeeper watches and
+ephemeral nodes when a session is reestablished.
+
+Note
+  To reestablish ephemeral nodes, it's necessary for ``zc.zk`` to
+  track node-moderation operations, so you have to access the
+  ZooKeeper APIs through the `zc.zk.ZooKeeper`_ object, rather than
+  using the low-level extension directly.
+
+ZooKeeper logging
+-----------------
+
+``zc.zk`` bridges the low-level ZooKeeper logging API and the Python
+logging API.  ZooKeeper log messages are forwarded to the Python
+``'ZooKeeper'`` logger.
+
 zc.zk.ZooKeeper
 ---------------
 
@@ -572,19 +578,53 @@ zc.zk.ZooKeeper
    them up when they are no-longer used.  If you only want to get the
    list of children once, use ``get_children``.
 
-``properties(path)``
-   Return a `zc.zk.Properties`_ for the path.
+``close()``
+    Close the ZooKeeper session.
 
-   Note that there is a fair bit of machinery in `zc.zk.Properties`_
-   objects to support keeping them up to date, callbacks, and cleaning
-   them up when they are no-longer used.  If you only want to get the
-   properties once, use ``get_properties``.
+    This should be called when cleanly shutting down servers to more
+    quickly remove ephemeral nodes.
 
-``handle``
-    The ZooKeeper session handle
+``delete_recursive(path[, dry_run])``
+   Delete a node and all of it's sub-nodes.
 
-    This attribute can be used to call the lower-level API provided by
-    the ``zookeeper`` extension.
+   Ephemeral nodes or nodes containing them are not deleted.
+
+   The dry_run option causes a summary of what would be deleted to be
+   printed without actually deleting anything.
+
+``export_tree(path[, ephemeral[, name]])``
+    Export a tree to a text representation.
+
+    path
+      The path to export.
+
+    ephemeral
+       Boolean, defaulting to false, indicating whether to include
+       ephemeral nodes in the export.  Including ephemeral nodes is
+       mainly useful for visualizing the tree state.
+
+    name
+       The name to use for the top-level node.
+
+       This is useful when using export and import to copy a tree to
+       a different location and name in the hierarchy.
+
+       Normally, when exporting the root node, ``/``, the root isn't
+       included, but it is included if a name is given.
+
+``get_children(path)``
+   Get a list of the names of the children the node at the given path.
+
+   This is more efficient than ``children`` when all you need is to
+   read the list once, as it doesn't create a `zc.zk.Children`_
+   object.
+
+``get_properties(path)``
+   Get the properties for the node at the given path as a dictionary.
+
+   This is more efficient than ``properties`` when all you need is to
+   read the properties once, as it doesn't create a
+   `zc.zk.Properties`_ object.
 
 ``import_tree(text[, path='/'[, trim[, acl[, dry_run]]]])``
     Create tree nodes by importing a textual tree representation.
@@ -607,48 +647,6 @@ zc.zk.ZooKeeper
        Boolean, defaulting to false, indicating whether to do a dry
        run of the import, without applying any changes.
 
-``export_tree(path[, ephemeral[, name]])``
-    Export a tree to a text representation.
-
-    path
-      The path to export.
-
-    ephemeral
-       Boolean, defaulting to false, indicating whether to include
-       ephemeral nodes in the export.  Including ephemeral nodes is
-       mainly useful for visualizing the tree state.
-
-    name
-       The name to use for the top-level node.
-
-       This is useful when using export and import to copy a tree to
-       a different location and name in the hierarchy.
-
-       Normally, when exporting the root node, ``/``, the root isn't
-       included, but it is included if a name is given.
-
-``delete_recursive(path[, dry_run])``
-   Delete a node and all of it's sub-nodes.
-
-   Ephemeral nodes or nodes containing them are not deleted.
-
-   The dry_run option causes a summary of what would be deleted to be
-   printed without actually deleting anything.
-
-``get_children(path)``
-   Get a list of the names of the children the node at the given path.
-
-   This is more efficient than ``children`` when all you need is to
-   read the list once, as it doesn't create a `zc.zk.Children`_
-   object.
-
-``get_properties(path)``
-   Get the properties for the node at the given path as a dictionary.
-
-   This is more efficient than ``properties`` when all you need is to
-   read the properties once, as it doesn't create a
-   `zc.zk.Properties`_ object.
-
 ``ln(source, destination)``
    Create a symbolic link at the destination path pointing to the
    source path.
@@ -656,10 +654,22 @@ zc.zk.ZooKeeper
    If the destination path ends with ``'/'``, then the source name is
    appended to the destination.
 
-``resolve(path)``
-   Find the real path for the given path.
+``print_tree(path='/')``
+   Print the tree at the given path.
 
-``register_server(path, address, **data)``
+   This is just a short-hand for::
+
+     print zk.export_tree(path, ephemeral=True),
+
+``properties(path)``
+   Return a `zc.zk.Properties`_ for the path.
+
+   Note that there is a fair bit of machinery in `zc.zk.Properties`_
+   objects to support keeping them up to date, callbacks, and cleaning
+   them up when they are no-longer used.  If you only want to get the
+   properties once, use ``get_properties``.
+
+``register_server(path, address, acl=zc.zk.READ_ACL_UNSAFE, **data)``
     Register a server at a path with the address.
 
     An ephemeral child node of ``path`` will be created with name equal
@@ -667,23 +677,21 @@ zc.zk.ZooKeeper
 
     ``address`` must be a host and port tuple.
 
+    ``acl`` is a ZooKeeper access control list.
+
     Optional node properties can be provided as keyword arguments.
 
-``close()``
-    Close the ZooKeeper session.
-
-    This should be called when cleanly shutting down servers to more
-    quickly remove ephemeral nodes.
+``resolve(path)``
+   Find the real path for the given path.
 
 In addition, ``ZooKeeper`` instances provide access to the following
 ZooKeeper functions as methods: ``acreate``, ``add_auth``,
 ``adelete``, ``aexists``, ``aget``, ``aget_acl``, ``aget_children``,
-``aset``, ``aset_acl``, ``async``, ``client_id``, ``create``,
-``delete``, ``exists``, ``get``, ``get_acl``, ``is_unrecoverable``,
-``recv_timeout``, ``set``, ``set2``, ``set_acl``, ``set_debug_level``,
-``set_log_stream``, ``set_watcher``, and ``zerror``. When calling
-these as methods on ``ZooKeeper`` instances, it isn't necessary to
-pass a handle, as that is provided automatically.
+``aset``, ``aset_acl``, ``async``, ``create``, ``delete``, ``exists``,
+``get``, ``get_acl``, ``is_unrecoverable``, ``recv_timeout``, ``set``,
+``set2``, ``set_acl``, and ``set_watcher``.  When calling these as
+methods on ``ZooKeeper`` instances, it isn't necessary to pass a
+handle, as that is provided automatically.
 
 zc.zk.Children
 --------------
@@ -749,6 +757,9 @@ Changes
 
 0.3.0 (2011-12-??)
 ------------------
+
+- Fixed bug: Ephemeral nodes weren't recreated when sessions were
+  reestablished.
 
 - Added a testing module that provides ZooKeeper emulation for
   testing complex interactions with zc.zk without needing a running

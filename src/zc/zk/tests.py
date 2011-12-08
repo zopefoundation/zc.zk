@@ -23,6 +23,7 @@ import pprint
 import re
 import StringIO
 import sys
+import threading
 import time
 import zc.zk
 import zc.zk.testing
@@ -293,7 +294,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(dict(properties), data)
 
         @side_effect(set)
-        def _(handle, path_, data):
+        def _(handle, path_, data, version=-1):
             self.__set_data = json.loads(data)
             self.assertEqual((handle, path_), (0, path))
 
@@ -336,7 +337,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(dict(properties), dict(string_value='\n{xxx}\n'))
 
         @side_effect(set)
-        def _(handle, path_, data):
+        def _(handle, path_, data, version=-1):
             self.__set_data = data
             self.assertEqual((handle, path_), (0, path))
 
@@ -572,6 +573,7 @@ Set up some handlers.
     >>> zk.set('/test', '{"b": 2}')
     3 {u'b': 2}
     4 zc.zk.Properties(0, /test)
+    0
 
 Hack data into the child watcher to verify it's cleared:
 
@@ -790,17 +792,306 @@ def test_export_top_w_name():
         /providers
     """
 
+def test_recovery_of_servers_on_session_reestablishment():
+    """
+
+First, a basic test:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice/providers', 'test')
+    >>> zk.get_children('/fooservice/providers')
+    ['test']
+
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+
+    >>> zk.get_children('/fooservice/providers')
+    ['test']
+
+Now, some variations.
+
+If the node is deleted, we don't recreate it:
+
+    >>> zk.delete('/fooservice/providers/test')
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+First, some non-standard data and acl:
+
+    >>> acl = [zc.zk.world_permission(3)]
+    >>> zk.register_server('/fooservice/providers', 'test', acl, a=1)
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /test
+        a = 1
+        pid = 362
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /test
+        a = 1
+        pid = 362
+
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
+    True
+
+Delete again:
+
+    >>> zk.delete('/fooservice/providers/test')
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+Let's use the low-level creation api:
+
+    >>> zk.create('/fooservice/providers/test', 'x', acl, zookeeper.EPHEMERAL)
+    '/fooservice/providers/test'
+
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'x'
+
+We track changes:
+
+    >>> _ = zk.set('/fooservice/providers/test', 'y')
+    >>> acl2 = [zc.zk.world_permission(4)]
+    >>> _ = zk.set_acl('/fooservice/providers/test', 0, acl2)
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl2
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'y'
+
+Delete again:
+
+    >>> zk.delete('/fooservice/providers/test')
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+
+Let's do it all asyncronously :)
+
+    >>> zk.acreate('/fooservice/providers/test', 'x', acl, zookeeper.EPHEMERAL,
+    ...             check_async(0))
+    0
+    >>> event.wait(1); assert_(event.is_set(), error=False)
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'x'
+
+    >>> zk.aset('/fooservice/providers/test', 'y', -1, check_async(0))
+    0
+    >>> event.wait(1); assert_(event.is_set())
+    >>> acl2 = [zc.zk.world_permission(4)]
+    >>> _ = zk.aset_acl('/fooservice/providers/test', 0, acl2, check_async(0))
+    >>> event.wait(1); assert_(event.is_set())
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_acl('/fooservice/providers/test')[1] == acl2
+    True
+    >>> zk.get('/fooservice/providers/test')[0]
+    'y'
+
+    >>> _ = zk.adelete('/fooservice/providers/test', -1, check_async(0))
+    >>> event.wait(1); assert_(event.is_set())
+    >>> ZooKeeper.sessions[zk.handle].disconnect()
+    >>> ZooKeeper.sessions[zk.handle].expire()
+    >>> zk.get_children('/fooservice/providers')
+    []
+    """
+
+def test_set():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.get('/')[0]
+    ''
+    >>> zk.set('/', 'a'); zk.get('/')[0]
+    0
+    'a'
+
+    >>> zk.set('/', 'b', 0)
+    Traceback (most recent call last):
+    ...
+    BadVersionException: bad version
+
+    >>> zk.set('/', 'b'); zk.get('/')[0]
+    0
+    'b'
+
+    >>> r = zk.aset('/', 'c', -1, check_async()); event.wait(1)
+    ... # doctest: +ELLIPSIS
+    async callback got (...
+    >>> r
+    0
+
+    >>> zk.get('/')[0]
+    'c'
+
+    >>> r = zk.aset('/', 'd', 0,
+    ...             check_async(expected_status=zookeeper.BADVERSION)
+    ...             ); event.wait(1)
+    async callback got (None,)
+
+    >>> r
+    0
+
+    >>> r = zk.aset('/', 'd', 3, check_async()); event.wait(1)
+    ... # doctest: +ELLIPSIS
+    async callback got (...
+    >>> r
+    0
+
+    >>> zk.get('/')[0]
+    'd'
+    """
+
+def test_delete():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
+
+Synchronous variations:
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.set('/test/a', '1')
+    >>> _ = zk.set('/test/a', '2')
+    >>> zk.delete('/test/a', 0)
+    Traceback (most recent call last):
+    ...
+    BadVersionException: bad version
+
+    >>> zk.get_children('/test')
+    ['a']
+    >>> zk.delete('/test/a', 2)
+    >>> zk.get_children('/test')
+    []
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.set('/test/a', '1')
+    >>> _ = zk.set('/test/a', '2')
+    >>> zk.delete('/test/a', -1)
+    >>> zk.get_children('/test')
+    []
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.set('/test/a', '1')
+    >>> _ = zk.set('/test/a', '2')
+    >>> zk.delete('/test/a')
+    >>> zk.get_children('/test')
+    []
+
+
+Asynchronous variations:
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.set('/test/a', '1')
+    >>> _ = zk.set('/test/a', '2')
+    >>> r = zk.adelete('/test/a', 0,
+    ...             check_async(expected_status=zookeeper.BADVERSION)
+    ...             ); event.wait(1)
+    async callback got ()
+    >>> r
+    0
+
+    >>> zk.get_children('/test')
+    ['a']
+    >>> r = zk.adelete('/test/a', 2, check_async()); event.wait(1)
+    async callback got ()
+    >>> r, zk.get_children('/test')
+    (0, [])
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.set('/test/a', '1')
+    >>> _ = zk.set('/test/a', '2')
+    >>> r = zk.adelete('/test/a', -1, check_async()); event.wait(1)
+    async callback got ()
+    >>> r, zk.get_children('/test')
+    (0, [])
+
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.set('/test/a', '1')
+    >>> _ = zk.set('/test/a', '2')
+    >>> r = zk.adelete('/test/a', completion=check_async()); event.wait(1)
+    async callback got ()
+    >>> r, zk.get_children('/test')
+    (0, [])
+
+    """
+
+def test_set_acl():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> zk.get_acl('/test')[1] == zc.zk.OPEN_ACL_UNSAFE
+    True
+    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(1)])
+    0
+    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(1)]
+    True
+
+    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(1)])
+    Traceback (most recent call last):
+    ...
+    BadVersionException: bad version
+
+    >>> zk.set_acl('/test', 1, [zc.zk.world_permission(2)])
+    0
+    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(2)]
+    True
+
+    >>> r = zk.aset_acl('/test', 0, [zc.zk.world_permission(3)],
+    ...                 check_async(expected_status=zookeeper.BADVERSION)
+    ...                 ); event.wait(1)
+    async callback got ()
+    >>> r
+    0
+
+    >>> r = zk.aset_acl('/test', 2, [zc.zk.world_permission(3)],
+    ...                 check_async()); event.wait(1)
+    async callback got (0,)
+    >>> r
+    0
+    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(3)]
+    True
+    """
+
+event = threading.Event()
+def check_async(show=True, expected_status=0):
+    event.clear()
+    def check(handle, status, *args):
+        if show:
+            print 'async callback got', args
+        event.set()
+        zc.zk.testing.assert_(
+            status==expected_status,
+            "Bad cb status %s" % status,
+            error=False)
+    return check
+
 def test_suite():
+    checker = zope.testing.renormalizing.RENormalizing([
+        (re.compile('pid = \d+'), 'pid = 9999')
+        ])
     return unittest.TestSuite((
         unittest.makeSuite(Tests),
         doctest.DocTestSuite(
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            checker=checker,
             ),
         manuel.testing.TestSuite(
-            manuel.doctest.Manuel(
-                checker = zope.testing.renormalizing.RENormalizing([
-                    (re.compile('pid = \d+'), 'pid = 9999')
-                    ])) + manuel.capture.Manuel(),
+            manuel.doctest.Manuel(checker=checker) + manuel.capture.Manuel(),
             'README.txt',
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
             ),

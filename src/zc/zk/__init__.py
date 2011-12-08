@@ -117,14 +117,18 @@ class FailedConnect(Exception):
 
 class ZooKeeper:
 
-    def __init__(self, zkaddr=2181, timeout=1):
+    def __init__(self, zkaddr=2181, zktimeout=None, timeout=1):
         if isinstance(zkaddr, int):
             zkaddr = "127.0.0.1:%s" % zkaddr
         self.timeout = timeout
         self.zkaddr = zkaddr
         self.watches = WatchManager()
+        self.ephemeral = {}
         self.connected = threading.Event()
-        handle = zookeeper.init(zkaddr, self._watch_session)
+        if zktimeout:
+            handle = zookeeper.init(zkaddr, self._watch_session, zktimeout)
+        else:
+            handle = zookeeper.init(zkaddr, self._watch_session)
         self.connected.wait(timeout)
         if not self.connected.is_set():
             zookeeper.close(handle)
@@ -139,6 +143,9 @@ class ZooKeeper:
                 self.handle = handle
                 for watch in self.watches.clear():
                     self._watch(watch, False)
+                for path, data in self.ephemeral.items():
+                    zookeeper.create(self.handle, path, data['data'],
+                                     data['acl'], data['flags'])
             else:
                 assert handle == self.handle
             self.connected.set()
@@ -153,14 +160,60 @@ class ZooKeeper:
         else:
             logger.critical('unexpected session event %s %s', handle, state)
 
-    def register_server(self, path, addr, **kw):
+    def register_server(self, path, addr, acl=READ_ACL_UNSAFE, **kw):
         kw['pid'] = os.getpid()
         if not isinstance(addr, str):
             addr = '%s:%s' % addr
         self.connected.wait(self.timeout)
         path = self.resolve(path)
-        zookeeper.create(self.handle, path + '/' + addr, encode(kw),
-                         [world_permission()], zookeeper.EPHEMERAL)
+        self.create(path + '/' + addr, encode(kw), acl, zookeeper.EPHEMERAL)
+
+
+    def _async(self, completion, meth, *args):
+        post = getattr(self, '_post_'+meth)
+        if completion is None:
+            result = getattr(zookeeper, meth)(self.handle, *args)
+            post(*args)
+            return result
+
+        def asynccb(handle, status, *cargs):
+            assert handle == self.handle
+            if status == 0:
+                post(*args)
+            completion(handle, status, *cargs)
+
+        return getattr(zookeeper, 'a'+meth)(self.handle, *(args+(asynccb,)))
+
+    def create(self, path, data, acl, flags=0, completion=None):
+        return self._async(completion, 'create', path, data, acl, flags)
+    acreate = create
+
+    def _post_create(self, path, data, acl, flags):
+        if flags & zookeeper.EPHEMERAL:
+            self.ephemeral[path] = dict(data=data, acl=acl, flags=flags)
+
+    def delete(self, path, version=-1, completion=None):
+        return self._async(completion, 'delete', path, version)
+    adelete = delete
+
+    def _post_delete(self, path, version):
+        self.ephemeral.pop(path, None)
+
+    def set(self, path, data, version=-1, completion=None):
+        return self._async(completion, 'set', path, data, version)
+    aset = set2 = set
+
+    def _post_set(self, path, data, version):
+        if path in self.ephemeral:
+            self.ephemeral[path]['data'] = data
+
+    def set_acl(self, path, version, acl, completion=None):
+        return self._async(completion, 'set_acl', path, version, acl)
+    aset_acl = set_acl
+
+    def _post_set_acl(self, path, version, acl):
+        if path in self.ephemeral:
+            self.ephemeral[path]['acl'] = acl
 
     def _watch(self, watch, wait=True):
         event_type = watch.event_type
@@ -437,6 +490,9 @@ class ZooKeeper:
         export_tree(path, '', name)
         return '\n'.join(output)+'\n'
 
+    def print_tree(self, path='/'):
+        print self.export_tree(path, True),
+
     def resolve(self, path, seen=()):
         if self.exists(path):
             return path
@@ -462,7 +518,7 @@ class ZooKeeper:
 
     def _set(self, path, data):
         self.connected.wait(self.timeout)
-        return zookeeper.set(self.handle, path, data)
+        return self.set(path, data)
 
 
     def ln(self, target, source):
@@ -483,18 +539,15 @@ class ZooKeeper:
             return zookeeper.CONNECTING_STATE
         return zookeeper.state(self.handle)
 
-
 def _make_method(name):
     return (lambda self, *a, **kw:
             getattr(zookeeper, name)(self.handle, *a, **kw))
 
 for name in (
-    'acreate', 'add_auth', 'adelete', 'aexists', 'aget', 'aget_acl',
-    'aget_children', 'aset', 'aset_acl', 'async', 'client_id',
-    'create', 'delete', 'exists', 'get', 'get_acl',
-    'get_children', 'is_unrecoverable', 'recv_timeout', 'set',
-    'set2', 'set_acl', 'set_debug_level', 'set_log_stream',
-    'set_watcher', 'zerror',
+    'add_auth', 'aexists', 'aget', 'aget_acl',
+    'aget_children', 'async', 'client_id',
+    'exists', 'get', 'get_acl',
+    'get_children', 'is_unrecoverable', 'recv_timeout',
     ):
     setattr(ZooKeeper, name, _make_method(name))
 
@@ -653,7 +706,7 @@ class Properties(NodeInfo, collections.Mapping):
 
     def _set(self, data):
         self.data = data
-        zookeeper.set(self.session.handle, self.path, encode(data))
+        self.session._set(self.path, encode(data))
 
     def set(self, data=None, **properties):
         data = data and dict(data) or {}
