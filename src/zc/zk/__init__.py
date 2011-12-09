@@ -307,76 +307,9 @@ class ZooKeeper:
 
     def import_tree(self, text, path='/', trim=False, acl=OPEN_ACL_UNSAFE,
                     dry_run=False):
-        # Step 1, build up internal tree repesentation:
-        root = _Tree()
-        indents = [(-1, root)] # sorted [(indent, node)]
-        lineno = 0
-        for line in text.split('\n'):
-            lineno += 1
-            line = line.rstrip()
-            if not line:
-                continue
-            data = line.strip()
-            if data[0] == '#':
-                continue
-            indent = len(line) - len(data)
-
-            m = _text_is_property(data)
-            if m:
-                expr = m.group('expr')
-                try:
-                    data = eval(expr, {})
-                except Exception, v:
-                    raise ValueError("Error %s in expression: %r" % (v, expr))
-                data = m.group('name'), data
-            else:
-                m = _text_is_link(data)
-                if m:
-                    data = (m.group('name') + ' ->'), m.group('target')
-                else:
-                    m = _text_is_node(data)
-                    if m:
-                        data = _Tree(m.group('name'))
-                        if m.group('type'):
-                            data.properties['type'] = m.group('type')
-                    else:
-                        if '->' in data:
-                            raise ValueError(lineno, data, "Bad link format")
-                        else:
-                            raise ValueError(lineno, data, "Unrecognized data")
-
-            if indent > indents[-1][0]:
-                if not isinstance(indents[-1][1], _Tree):
-                    raise ValueError(
-                        lineno, line,
-                        "Can't indent under properties")
-                indents.append((indent, data))
-            else:
-                while indent < indents[-1][0]:
-                    indents.pop()
-
-                if indent > indents[-1][0]:
-                    raise ValueError(lineno, data, "Invalid indentation")
-
-            if isinstance(data, _Tree):
-                children = indents[-2][1].children
-                if data.name in children:
-                    raise ValueError(lineno, data, 'duplicate node')
-                children[data.name] = data
-                indents[-1] = indent, data
-            else:
-                if indents[-2][1] is root:
-                    raise ValueError("Can't above imported nodes.")
-                properties = indents[-2][1].properties
-                name, value = data
-                if name in properties:
-                    raise ValueError(lineno, data, 'duplicate property')
-                properties[name] = value
-
-        # Step 2 Create The nodes
         while path.endswith('/'):
             path = path[:-1] # Mainly to deal w root: /
-        self._import_tree(path, root, acl, trim, dry_run, True)
+        self._import_tree(path, parse_tree(text), acl, trim, dry_run, True)
 
     def _import_tree(self, path, node, acl, trim, dry_run, top=False):
         self.connected.wait(self.timeout)
@@ -728,6 +661,74 @@ class Properties(NodeInfo, collections.Mapping):
     def __hash__(self):
         # Gaaaa, collections.Mapping
         return hash(id(self))
+
+def parse_tree(text):
+    root = _Tree()
+    indents = [(-1, root)] # sorted [(indent, node)]
+    lineno = 0
+    for line in text.split('\n'):
+        lineno += 1
+        line = line.rstrip()
+        if not line:
+            continue
+        data = line.strip()
+        if data[0] == '#':
+            continue
+        indent = len(line) - len(data)
+
+        m = _text_is_property(data)
+        if m:
+            expr = m.group('expr')
+            try:
+                data = eval(expr, {})
+            except Exception, v:
+                raise ValueError("Error %s in expression: %r" % (v, expr))
+            data = m.group('name'), data
+        else:
+            m = _text_is_link(data)
+            if m:
+                data = (m.group('name') + ' ->'), m.group('target')
+            else:
+                m = _text_is_node(data)
+                if m:
+                    data = _Tree(m.group('name'))
+                    if m.group('type'):
+                        data.properties['type'] = m.group('type')
+                else:
+                    if '->' in data:
+                        raise ValueError(lineno, data, "Bad link format")
+                    else:
+                        raise ValueError(lineno, data, "Unrecognized data")
+
+        if indent > indents[-1][0]:
+            if not isinstance(indents[-1][1], _Tree):
+                raise ValueError(
+                    lineno, line,
+                    "Can't indent under properties")
+            indents.append((indent, data))
+        else:
+            while indent < indents[-1][0]:
+                indents.pop()
+
+            if indent > indents[-1][0]:
+                raise ValueError(lineno, data, "Invalid indentation")
+
+        if isinstance(data, _Tree):
+            children = indents[-2][1].children
+            if data.name in children:
+                raise ValueError(lineno, data, 'duplicate node')
+            children[data.name] = data
+            indents[-1] = indent, data
+        else:
+            if indents[-2][1] is root:
+                raise ValueError("Can't above imported nodes.")
+            properties = indents[-2][1].properties
+            name, value = data
+            if name in properties:
+                raise ValueError(lineno, data, 'duplicate property')
+            properties[name] = value
+
+    return root
 
 class _Tree:
     # Internal tree rep for import/export
