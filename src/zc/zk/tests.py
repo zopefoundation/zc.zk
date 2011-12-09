@@ -1006,6 +1006,24 @@ def test_server_registeration_event():
     True
     """
 
+def connection_edge_cases():
+    """
+We can pass a session timeout, and it will be passed to ZooKeeper:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181', 4242)
+    >>> zk.recv_timeout()
+    4242
+    >>> zk.close()
+
+Connecting to an invalid address caused a FailedConnect to be raised:
+
+    >>> zc.zk.ZooKeeper('192.0.2.42:2181')
+    Traceback (most recent call last):
+    ...
+    FailedConnect: 192.0.2.42:2181
+
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()
@@ -1047,6 +1065,7 @@ def test_suite():
         suite.addTest(unittest.makeSuite(LoggingTests))
         suite.addTest(doctest.DocFileSuite(
             'ephemeral_node_recovery_on_session_reestablishment.test',
+            'wait_for_zookeeper.test',
             setUp=setUpEphemeral_node_recovery_on_session_reestablishment,
             tearDown=zc.zk.testing.tearDown,
             checker=checker,

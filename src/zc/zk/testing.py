@@ -112,6 +112,10 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     shown in your tests. In particularm ``zookeeper.create`` returns
     the path created and the string returned is real, not virtual.
     This node is cleaned up by the ``tearDown``.
+
+    A doctest can determine if it's running with a stub ZooKeeper by
+    checking whether the value of the ZooKeeper gloval variable is None.
+    A regular unit test can check the ZooKeeper test attribute.
     """
 
     globs = getattr(test, 'globs', test.__dict__)
@@ -126,10 +130,11 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
         orig_init = zookeeper.init
         cm = mock.patch('zookeeper.init')
         m = cm.__enter__()
-        def init(addr, watch=None):
-            assert_(addr==connection_string,
-                    "%r != %r" % (addr, connection_string))
-            return orig_init(real_zk+test_root, watch, 1000)
+        def init(addr, watch=None, session_timeout=1000):
+            if addr != connection_string:
+                return orig_init(addr, watch, session_timeout)
+            else:
+                return orig_init(real_zk+test_root, watch, session_timeout)
         m.side_effect = init
         teardowns.append(cm.__exit__)
 
@@ -192,7 +197,7 @@ def tearDown(test):
 
 class Session:
 
-    def __init__(self, zk, handle, watch=None):
+    def __init__(self, zk, handle, watch=None, session_timeout=None):
         self.zk = zk
         self.handle = handle
         self.nodes = set()
@@ -200,6 +205,7 @@ class Session:
         self.remove = self.nodes.remove
         self.watch = watch
         self.state = zookeeper.CONNECTING_STATE
+        self.session_timeout = session_timeout
 
     def connect(self):
         self.newstate(zookeeper.CONNECTED_STATE)
@@ -254,20 +260,29 @@ exception_codes = {
 class ZooKeeper:
 
     def __init__(self, connection_string, tree):
-        self.connection_string = connection_string
+        self.connection_strings = set([connection_string])
         self.root = tree
         self.sessions = {}
         self.lock = threading.RLock()
-        self.connect_immediately = True
+        self.failed = {}
 
-    def init(self, addr, watch=None):
+    def init(self, addr, watch=None, session_timeout=4000):
         with self.lock:
-            assert_(addr==self.connection_string, addr)
             handle = 0
             while handle in self.sessions:
                 handle += 1
-            self.sessions[handle] = Session(self, handle, watch)
-            if self.connect_immediately:
+            self.sessions[handle] = Session(
+                self, handle, watch, session_timeout)
+            if addr in self.connection_strings:
+                self.sessions[handle].connect()
+            else:
+                self.failed.setdefault(addr, set()).add(handle)
+            return handle
+
+    def _allow_connection(self, connection_string):
+        self.connection_strings.add(connection_string)
+        for handle in self.failed.pop(connection_string, ()):
+            if handle in self.sessions:
                 self.sessions[handle].connect()
 
     def _check_handle(self, handle, checkstate=True):
@@ -418,6 +433,10 @@ class ZooKeeper:
     def aget(self, handle, path, watch=None, completion=None):
         return self._doasync(completion, handle, 2,
                              self.get, handle, path, watch)
+
+    def recv_timeout(self, handle):
+        with self.lock:
+            return self._check_handle(handle, False).session_timeout
 
     def set(self, handle, path, data, version=-1, async=False):
         with self.lock:

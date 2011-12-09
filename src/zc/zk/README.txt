@@ -604,8 +604,24 @@ Reference
 zc.zk.ZooKeeper
 ---------------
 
-``zc.zk.ZooKeeper(connection_string)``
+``zc.zk.ZooKeeper([connection_string[, session_timeout[, timeout[, wait]]]])``
     Return a new instance given a ZooKeeper connection string.
+
+    The connection string defaults to '127.0.0.1:2181'.
+
+    If a session timeout (``session_timeout``) isn't specified, the
+    ZooKeeper server's default session timeout is used.  If the
+    connection to ZooKeeper flaps, setting this to a higher value can
+    avoid having clients think a server has gone away, when it hasn't.
+    The downside of setting this to a higher value is that if a server
+    crashes, it will take longer for ZooKeeper to notice that it's
+    gone.
+
+    The ``wait`` flag indicates whether the constructor should wait
+    for a connection to ZooKeeper.  It defaults to False.
+
+    If a connection can't be made, a ``zc.zk.FailedConnect`` exception
+    is raised.
 
 ``children(path)``
    Return a `zc.zk.Children`_ for the path.
@@ -809,6 +825,8 @@ Change History
   ``parse_tree``, to support analysis and added a ``graphvis``
   demonstration module to show how one might use tree representations
   for system modeling.
+- Added a `zc.zc.ZooKeeper`_ ``wait`` constructor argument to wait
+  indefinately for ZooKeeper to be available.
 
 0.2.0 (2011-12-05)
 ------------------

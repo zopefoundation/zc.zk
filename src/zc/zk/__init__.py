@@ -119,54 +119,64 @@ class FailedConnect(Exception):
 
 class ZooKeeper:
 
-    def __init__(self, zkaddr=2181, zktimeout=None, timeout=1):
-        if isinstance(zkaddr, int):
-            zkaddr = "127.0.0.1:%s" % zkaddr
-        self.timeout = timeout
-        self.zkaddr = zkaddr
+    def __init__(self, connection_string="127.0.0.1:2181", session_timeout=None,
+                 wait=False):
         self.watches = WatchManager()
         self.ephemeral = {}
-        self.connected = threading.Event()
-        if zktimeout:
-            handle = zookeeper.init(zkaddr, self._watch_session, zktimeout)
-        else:
-            handle = zookeeper.init(zkaddr, self._watch_session)
-        self.connected.wait(timeout)
-        if not self.connected.is_set():
-            zookeeper.close(handle)
-            raise FailedConnect(zkaddr)
+        self.handle = None
 
-    handle = None
-    def _watch_session(self, handle, event_type, state, path):
-        assert event_type == zookeeper.SESSION_EVENT
-        assert not path
-        if state == zookeeper.CONNECTED_STATE:
-            if self.handle is None:
-                self.handle = handle
-                for watch in self.watches.clear():
-                    self._watch(watch, False)
-                for path, data in self.ephemeral.items():
-                    zookeeper.create(self.handle, path, data['data'],
-                                     data['acl'], data['flags'])
+        connected = self.connected = threading.Event()
+        def watch_session(handle, event_type, state, path):
+            assert event_type == zookeeper.SESSION_EVENT
+            assert not path
+            if state == zookeeper.CONNECTED_STATE:
+                if self.handle is None:
+                    self.handle = handle
+                    for watch in self.watches.clear():
+                        self._watch(watch)
+                    for path, data in self.ephemeral.items():
+                        zookeeper.create(self.handle, path, data['data'],
+                                         data['acl'], data['flags'])
+                else:
+                    assert handle == self.handle
+                connected.set()
+                logger.info('connected %s', handle)
+            elif state == zookeeper.CONNECTING_STATE:
+                connected.clear()
+            elif state == zookeeper.EXPIRED_SESSION_STATE:
+                connected.clear()
+                if self.handle is not None:
+                    zookeeper.close(self.handle)
+                self.handle = None
+                init()
             else:
-                assert handle == self.handle
-            self.connected.set()
-            logger.info('connected %s', handle)
-        elif state == zookeeper.CONNECTING_STATE:
-            self.connected.clear()
-        elif state == zookeeper.EXPIRED_SESSION_STATE:
-            self.connected.clear()
-            zookeeper.close(self.handle)
-            self.handle = None
-            zookeeper.init(self.zkaddr, self._watch_session)
+                logger.critical('unexpected session event %s %s', handle, state)
+
+        if session_timeout:
+            init = (lambda : zookeeper.init(connection_string, watch_session,
+                                            session_timeout)
+                    )
         else:
-            logger.critical('unexpected session event %s %s', handle, state)
+            init = lambda : zookeeper.init(connection_string, watch_session)
+
+        handle = init()
+        connected.wait(1)
+        if not connected.is_set():
+            if wait:
+                while not connected.is_set():
+                    print 'whimper'
+                    logger.critical("Can't connect to ZooKeeper at %r",
+                                    connection_string)
+                    connected.wait(1)
+            else:
+                zookeeper.close(handle)
+                raise FailedConnect(connection_string)
+
 
     def register_server(self, path, addr, acl=READ_ACL_UNSAFE, **kw):
         kw['pid'] = os.getpid()
         if not isinstance(addr, str):
             addr = '%s:%s' % addr
-        self.connected.wait(self.timeout)
         path = self.resolve(path)
         zc.zk.event.notify(RegisteringServer(addr, path, kw))
         self.create(path + '/' + addr, encode(kw), acl, zookeeper.EPHEMERAL)
@@ -220,10 +230,8 @@ class ZooKeeper:
         if path in self.ephemeral:
             self.ephemeral[path]['acl'] = acl
 
-    def _watch(self, watch, wait=True):
+    def _watch(self, watch):
         event_type = watch.event_type
-        if wait:
-            self.connected.wait(self.timeout)
         watch.real_path = real_path = self.resolve(watch.path)
         key = event_type, real_path
         if self.watches.add(key, watch):
@@ -294,7 +302,7 @@ class ZooKeeper:
                 logger.exception("%s path went away", watch)
                 watch._deleted()
             else:
-                self._watch(watch, False)
+                self._watch(watch)
 
     def children(self, path):
         return Children(self, path)
@@ -312,7 +320,6 @@ class ZooKeeper:
         self._import_tree(path, parse_tree(text), acl, trim, dry_run, True)
 
     def _import_tree(self, path, node, acl, trim, dry_run, top=False):
-        self.connected.wait(self.timeout)
         if not top:
             new_children = set(node.children)
             for name in self.get_children(path):
@@ -390,7 +397,6 @@ class ZooKeeper:
     def export_tree(self, path='/', ephemeral=False, name=None):
         output = []
         out = output.append
-        self.connected.wait(self.timeout)
 
         def export_tree(path, indent, name=None):
             children = self.get_children(path)
@@ -455,7 +461,6 @@ class ZooKeeper:
             raise zookeeper.NoNodeException(path)
 
     def _set(self, path, data):
-        self.connected.wait(self.timeout)
         return self.set(path, data)
 
 
@@ -469,7 +474,7 @@ class ZooKeeper:
 
     def close(self):
         zookeeper.close(self.handle)
-        del self.handle
+        self.handle = None
 
     @property
     def state(self):
