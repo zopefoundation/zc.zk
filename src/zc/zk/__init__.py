@@ -164,7 +164,6 @@ class ZooKeeper:
         if not connected.is_set():
             if wait:
                 while not connected.is_set():
-                    print 'whimper'
                     logger.critical("Can't connect to ZooKeeper at %r",
                                     connection_string)
                     connected.wait(1)
