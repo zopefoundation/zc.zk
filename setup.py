@@ -33,7 +33,7 @@ setup(
 
     name = name, version = version,
     long_description=readme,
-    description = readme.strip().split('\n')[0],
+    description = readme.strip().split('\n')[1],
     packages = [name.split('.')[0], name],
     namespace_packages = [name.split('.')[0]],
     package_dir = {'': 'src'},

@@ -1,3 +1,4 @@
+========================
 High-level ZooKeeper API
 ========================
 
@@ -23,7 +24,7 @@ Windows might be accepted if they don't add much complexity.)
 .. contents::
 
 Installation
-------------
+============
 
 You can install this as you would any other distribution. Note,
 however, that you must also install the Python ZooKeeper binding
@@ -35,7 +36,7 @@ An easy way to get the Python zookeeper binding is by installing
 distribution.
 
 Instantiating a ZooKeeper helper
---------------------------------
+================================
 
 To use the helper API, create a ZooKeeper instance::
 
@@ -46,8 +47,8 @@ The ZooKeeper constructor takes a ZooKeeper connection string, which is a
 comma-separated list of addresses of the form *HOST:PORT*.  It defaults
 to ``'127.0.0.1:2181'``, which is convenient during development.
 
-Register a server providing a service.
---------------------------------------
+Register a server providing a service
+=====================================
 
 To register a server, use the ``register_server`` method, which takes
 a service path and the address a server is listing on::
@@ -77,8 +78,8 @@ data as additional keyword arguments to register_server.  By default,
 the process id is set as the ``pid`` property.  This is useful to
 tracking down the server process.
 
-Get the addresses of service providers.
----------------------------------------
+Get the addresses of service providers
+======================================
 
 Getting the addresses providing a service is accomplished by getting the
 children of a service node::
@@ -117,8 +118,8 @@ another child, it'll be called again::
     addresses changed
     ['192.168.0.42:8080', '192.168.0.42:8081', '192.168.0.42:8082']
 
-Get service configuration data.
--------------------------------
+Get service configuration data
+==============================
 
 You get service configuration data by getting properties associated with a
 ZooKeeper node.  The interface for getting properties is similar to the
@@ -151,7 +152,7 @@ The callback is called immediately. It'll also be called when data are
 updated.
 
 Updating node properties
-------------------------
+========================
 
 You can't set properties, but you can update properties by calling the
 ``update`` method::
@@ -176,7 +177,7 @@ from keyword parameters.  Keyword parameters take precedent over the
 positional data argument.
 
 Tree-definition format, import, and export
-------------------------------------------
+==========================================
 
 You can describe a ZooKeeper tree using a textual tree
 representation. You can then populate the tree by importing the
@@ -382,8 +383,8 @@ will never be trimmed.  Also node that top-level nodes are never
 automatically trimmed.  So we weren't warned about the unreferenced
 top-level nodes in the import.
 
-Recursive Deletion
-------------------
+Recursive deletion
+==================
 
 ZooKeeper only allows deletion of nodes without children.
 The ``delete_recursive`` method automates removing a node and all of
@@ -420,7 +421,7 @@ You can't delete nodes ephemeral nodes, or nodes that contain them::
     /fooservice not deleted due to ephemeral descendent.
 
 Symbolic links
---------------
+==============
 
 ZooKeeper doesn't have a concept of symbolic links, but ``zc.zk``
 provides a convention for dealing with symbolic links.  When trying to
@@ -534,7 +535,7 @@ updates::
     {u'a': 1}
 
 Node deletion
--------------
+=============
 
 If a node is deleted and ``Children`` or ``Properties`` instances have
 been created for it, and the paths they were created with can't be
@@ -545,7 +546,7 @@ It would be bad, in practice, to remove a node that processes are
 watching.
 
 ZooKeeper Session Management
-----------------------------
+============================
 
 ``zc.zk`` takes care of ZooKeeper session management for you. It
 establishes and, if necessary, reestablishes sessions for you.  In
@@ -559,11 +560,14 @@ Note
   using the low-level extension directly.
 
 ZooKeeper logging
------------------
+=================
 
 ``zc.zk`` bridges the low-level ZooKeeper logging API and the Python
 logging API.  ZooKeeper log messages are forwarded to the Python
 ``'ZooKeeper'`` logger.
+
+Reference
+=========
 
 zc.zk.ZooKeeper
 ---------------
@@ -753,8 +757,8 @@ more, use the help function::
     >>> import zc.zk.testing
 
 
-Changes
--------
+Change History
+==============
 
 0.3.0 (2011-12-??)
 ------------------
