@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import weakref
+import zc.zk.event
 import zc.thread
 import zookeeper
 
@@ -167,6 +168,7 @@ class ZooKeeper:
             addr = '%s:%s' % addr
         self.connected.wait(self.timeout)
         path = self.resolve(path)
+        zc.zk.event.notify(RegisteringServer(addr, path, kw))
         self.create(path + '/' + addr, encode(kw), acl, zookeeper.EPHEMERAL)
 
     test_sleep = 0
@@ -736,3 +738,27 @@ class _Tree:
         self.children = children
         for name, child in children.iteritems():
             child.name = name
+
+class RegisteringServer:
+    """Event emitted while a server is being registered.
+
+    Attributes:
+
+    name
+      The server name (node name)
+    name
+      The service path (node parent path)
+    properties
+      A dictionary of properties to be saved on the ephemeral node.
+
+      Typeically, subscribers will add properties.
+    """
+
+    def __init__(self, name, path, properties):
+        self.name = name
+        self.path = path
+        self.properties = properties
+
+    def __repr__(self):
+        return "RegisteringServer(%r, %r, %r)" % (
+            self.name, self.path, self.properties)

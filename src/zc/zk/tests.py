@@ -972,6 +972,40 @@ def test_set_acl():
     >>> zk.close()
     """
 
+def test_server_registeration_event():
+    """
+    >>> import sys, zc.zk.event, zope.event
+    >>> zc.zk.event.notify is zope.event.notify
+    True
+    >>> sys.modules['zope.event'] = None
+    >>> _ = reload(zc.zk.event)
+    >>> zc.zk.event.notify is zope.event.notify
+    False
+    >>> zc.zk.event.notify is zc.zk.event._noop
+    True
+    >>> def notify(e):
+    ...     print e
+    ...     e.properties['test'] = 1
+    >>> zc.zk.event.notify = notify
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice/providers', '1.2.3.4:5678')
+    RegisteringServer('1.2.3.4:5678', '/fooservice/providers', {'pid': 1793})
+
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /1.2.3.4:5678
+        pid = 1793
+        test = 1
+
+    >>> zk.close()
+
+    >>> sys.modules['zope.event'] = zope.event
+    >>> _ = reload(zc.zk.event)
+    >>> zc.zk.event.notify is zope.event.notify
+    True
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()
@@ -993,6 +1027,7 @@ def setUpEphemeral_node_recovery_on_session_reestablishment(test):
 def test_suite():
     checker = zope.testing.renormalizing.RENormalizing([
         (re.compile('pid = \d+'), 'pid = 9999'),
+        (re.compile("{'pid': \d+}"), 'pid = 9999'),
         (re.compile('/zc\.zk\.testing\.test-root\d+'), ''),
         (re.compile(r'2 None\n4 None'), '4 None\n2 None'),
         ])

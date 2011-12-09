@@ -76,7 +76,9 @@ containing it dies.  De-registration is automatic.
 When registering a server, you can optionally provide server (node)
 data as additional keyword arguments to register_server.  By default,
 the process id is set as the ``pid`` property.  This is useful to
-tracking down the server process.
+tracking down the server process.  In addition, an event is generated,
+providing subscribers to add properties as a server is being
+registered. (See `Server-registration events`_.)
 
 Get the addresses of service providers
 ======================================
@@ -545,6 +547,19 @@ been registered, they will be called without arguments, if possible.
 It would be bad, in practice, to remove a node that processes are
 watching.
 
+Server-registration events
+==========================
+
+When ``register_server`` is called, a ``zc.zk.RegisteringServer``
+event is emmitted with a properties attribute that can be updated by
+subscribers prior to creating the ZooKeeper ephemeral node.  This
+allows third-party code to record extra server information.
+
+Events are emitted by passing them to ``zc.zk.event.notify``. If
+``zope.event`` is installed, then ``zc.zk.event.notify`` is an alias
+for ``zope.event.notify``, otherwise, ``zc.zk.event.notify`` is an
+empty function that can be replaced by applications.
+
 ZooKeeper Session Management
 ============================
 
@@ -765,6 +780,10 @@ Change History
 
 - Fixed bug: Ephemeral nodes weren't recreated when sessions were
   reestablished.
+
+- ``zc.zk.RegisteringServer`` events are generated during server
+  registration to allow third-party libraries to record additional
+  properties on new server nodes.
 
 - Added a testing module that provides ZooKeeper emulation for
   testing complex interactions with zc.zk without needing a running
