@@ -1024,6 +1024,18 @@ Connecting to an invalid address caused a FailedConnect to be raised:
 
     """
 
+def register_server_at_root():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/', 'a:b')
+    >>> zk.print_tree() # doctest: +ELLIPSIS
+    /a:b
+      pid = 2318
+    /fooservice
+    ...
+    >>> zk.close()
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()

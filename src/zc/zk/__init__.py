@@ -178,7 +178,9 @@ class ZooKeeper:
             addr = '%s:%s' % addr
         path = self.resolve(path)
         zc.zk.event.notify(RegisteringServer(addr, path, kw))
-        self.create(path + '/' + addr, encode(kw), acl, zookeeper.EPHEMERAL)
+        if path != '/':
+            path += '/'
+        self.create(path + addr, encode(kw), acl, zookeeper.EPHEMERAL)
 
     test_sleep = 0
     def _async(self, completion, meth, *args):
