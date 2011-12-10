@@ -356,6 +356,8 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             base, name = path.rsplit('/', 1)
+            if base.endswith('/'):
+                raise zookeeper.BadArgumentsException('bad arguments')
             node = self._traverse(base)
             if name in node.children:
                 raise zookeeper.NodeExistsException()
