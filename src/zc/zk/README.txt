@@ -98,7 +98,7 @@ updated when new providers are registered::
     >>> sorted(addresses)
     ['192.168.0.42:8080', '192.168.0.42:8081']
 
-You can also get the number of children with ``len``:
+You can also get the number of children with ``len``::
 
     >>> len(addresses)
     2
