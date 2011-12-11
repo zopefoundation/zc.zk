@@ -808,7 +808,7 @@ more, use the help function::
 Change History
 ==============
 
-0.3.0 (2011-12-??)
+0.3.0 (2011-12-11)
 ------------------
 
 - Fixed bug: Ephemeral nodes weren't recreated when sessions were
@@ -825,7 +825,7 @@ Change History
   ``parse_tree``, to support analysis and added a ``graphvis``
   demonstration module to show how one might use tree representations
   for system modeling.
-- Added a `zc.zc.ZooKeeper`_ ``wait`` constructor argument to wait
+- Added a `zc.zk.ZooKeeper`_ ``wait`` constructor argument to wait
   indefinately for ZooKeeper to be available.
 
 0.2.0 (2011-12-05)
