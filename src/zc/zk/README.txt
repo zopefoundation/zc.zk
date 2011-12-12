@@ -808,6 +808,12 @@ more, use the help function::
 Change History
 ==============
 
+0.4.0 (2011-12-??)
+------------------
+
+- Fixed a race that could cause ZooKeeper logging info to be output
+  before ``zc.zk`` began redirecting it.
+
 0.3.0 (2011-12-11)
 ------------------
 

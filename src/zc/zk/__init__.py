@@ -26,10 +26,12 @@ import zookeeper
 
 logger = logging.getLogger(__name__)
 
+_logging_pipe = os.pipe()
+zookeeper.set_log_stream(os.fdopen(_logging_pipe[1], 'w'))
+
 @zc.thread.Thread
 def loggingthread():
-    r, w = os.pipe()
-    zookeeper.set_log_stream(os.fdopen(w, 'w'))
+    r, w = _logging_pipe
     log = logging.getLogger('ZooKeeper').log
     f = os.fdopen(r)
     levels = dict(ZOO_INFO = logging.INFO,
