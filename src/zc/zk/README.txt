@@ -581,6 +581,73 @@ ZooKeeper logging
 logging API.  ZooKeeper log messages are forwarded to the Python
 ``'ZooKeeper'`` logger.
 
+zookeeper_export script
+=======================
+
+The `zc.zk` package provides a utility script for exporting a
+ZooKeeper tree::
+
+    $ zookeeper_export -e zookeeper.example.com:2181 /fooservice
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+        /192.168.0.42:8080
+          pid = 7981
+        /192.168.0.42:8081
+          pid = 7981
+        /192.168.0.42:8082
+          pid = 7981
+
+.. -> sh
+
+    >>> command, expected = sh.strip().split('\n', 1)
+    >>> _, command, args = command.split(None, 2)
+    >>> import pkg_resources
+    >>> export = pkg_resources.load_entry_point(
+    ...     'zc.zk', 'console_scripts', command)
+    >>> import sys, StringIO
+    >>> sys.stdout = f = StringIO.StringIO(); export(args.split())
+    >>> got = f.getvalue()
+    >>> import zc.zk.tests
+    >>> zc.zk.tests.checker.check_output(expected.strip(), got.strip(), 0)
+    True
+
+    >>> export(['zookeeper.example.com:2181', '/fooservice'])
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+
+    >>> export(['zookeeper.example.com:2181'])
+    /cms : z4m cms
+      threads = 4
+      /databases
+        main -> /databases/cms
+      /providers
+    /databases
+      /cms
+        a = 1
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb : ipvs
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+
+    >>> export(['zookeeper.example.com:2181', '/fooservice', '-oo'])
+    >>> print open('o').read(),
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+
+The export script provides the same features as the ``export_tree``
+method. Use the ``--help`` option to see how to use it.
+
 Graph analysis
 ==============
 
@@ -811,6 +878,7 @@ Change History
 0.4.0 (2011-12-??)
 ------------------
 
+- Provided a command-line tool, ``zookeeper_export``,  to export/print trees.
 - Fixed a race that could cause ZooKeeper logging info to be output
   before ``zc.zk`` began redirecting it.
 

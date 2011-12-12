@@ -1054,13 +1054,14 @@ def setUpEphemeral_node_recovery_on_session_reestablishment(test):
     test.globs['check_async'] = check_async
     test.globs['event'] = event
 
+checker = zope.testing.renormalizing.RENormalizing([
+    (re.compile('pid = \d+'), 'pid = 9999'),
+    (re.compile("{'pid': \d+}"), 'pid = 9999'),
+    (re.compile('/zc\.zk\.testing\.test-root\d+'), ''),
+    (re.compile(r'2 None\n4 None'), '4 None\n2 None'),
+    ])
+
 def test_suite():
-    checker = zope.testing.renormalizing.RENormalizing([
-        (re.compile('pid = \d+'), 'pid = 9999'),
-        (re.compile("{'pid': \d+}"), 'pid = 9999'),
-        (re.compile('/zc\.zk\.testing\.test-root\d+'), ''),
-        (re.compile(r'2 None\n4 None'), '4 None\n2 None'),
-        ])
     suite = unittest.TestSuite((
         manuel.testing.TestSuite(
             manuel.doctest.Manuel(checker=checker) + manuel.capture.Manuel(),
