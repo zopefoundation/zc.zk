@@ -547,6 +547,20 @@ been registered, they will be called without arguments, if possible.
 It would be bad, in practice, to remove a node that processes are
 watching.
 
+Registering a server with a blank hostname
+==========================================
+
+It's common to use an empty string for a host name when calling bind
+to listen on all IPv4 interfaces.  If you pass an empty host name to
+``register_server``, the result of calling ``socket.getfqdn()`` will
+be registered:
+
+    >>> zk.register_server('/fooservice/providers', ('', 42))
+    addresses changed
+    ['192.168.0.42:8080', '192.168.0.42:8081', '192.168.0.42:8082',
+     'server.example.com:42']
+
+
 Server-registration events
 ==========================
 
@@ -597,6 +611,8 @@ ZooKeeper tree::
         /192.168.0.42:8081
           pid = 7981
         /192.168.0.42:8082
+          pid = 7981
+        /server.example.com:42
           pid = 7981
 
 .. -> sh
@@ -875,10 +891,12 @@ more, use the help function::
 Change History
 ==============
 
-0.4.0 (2011-12-??)
+0.4.0 (2011-12-12)
 ------------------
 
 - Provided a command-line tool, ``zookeeper_export``,  to export/print trees.
+- If a server is registered with an empty host name, the hostname is
+  changed to the result of `socket.getfqdn()``.
 - Fixed a race that could cause ZooKeeper logging info to be output
   before ``zc.zk`` began redirecting it.
 

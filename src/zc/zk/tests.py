@@ -1054,6 +1054,13 @@ def setUpEphemeral_node_recovery_on_session_reestablishment(test):
     test.globs['check_async'] = check_async
     test.globs['event'] = event
 
+def setUpREADME(test):
+    zc.zk.testing.setUp(test)
+    cm = mock.patch('socket.getfqdn')
+    m = cm.__enter__()
+    m.side_effect = lambda : 'server.example.com'
+    test.globs['zc.zk.testing'].append(cm.__exit__)
+
 checker = zope.testing.renormalizing.RENormalizing([
     (re.compile('pid = \d+'), 'pid = 9999'),
     (re.compile("{'pid': \d+}"), 'pid = 9999'),
@@ -1064,9 +1071,11 @@ checker = zope.testing.renormalizing.RENormalizing([
 def test_suite():
     suite = unittest.TestSuite((
         manuel.testing.TestSuite(
-            manuel.doctest.Manuel(checker=checker) + manuel.capture.Manuel(),
+            manuel.doctest.Manuel(
+                checker=checker, optionflags=doctest.NORMALIZE_WHITESPACE) +
+            manuel.capture.Manuel(),
             'README.txt',
-            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            setUp=setUpREADME, tearDown=zc.zk.testing.tearDown,
             ),
         doctest.DocTestSuite(
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,

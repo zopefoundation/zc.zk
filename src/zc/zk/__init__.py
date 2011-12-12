@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -176,7 +177,12 @@ class ZooKeeper:
 
     def register_server(self, path, addr, acl=READ_ACL_UNSAFE, **kw):
         kw['pid'] = os.getpid()
-        if not isinstance(addr, str):
+        if isinstance(addr, str):
+            if addr[:1] == ':':
+                addr = socket.getfqdn()+addr
+        else:
+            if addr[0] == '':
+                addr = socket.getfqdn(), addr[1]
             addr = '%s:%s' % addr
         path = self.resolve(path)
         zc.zk.event.notify(RegisteringServer(addr, path, kw))
