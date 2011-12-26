@@ -93,24 +93,6 @@ def world_permission(perms=zookeeper.PERM_READ):
 OPEN_ACL_UNSAFE = [world_permission(zookeeper.PERM_ALL)]
 READ_ACL_UNSAFE = [world_permission()]
 
-
-_text_is_node = re.compile(
-    r'/(?P<name>\S+)'
-    '(\s*:\s*(?P<type>\S.*))?'
-    '$').match
-_text_is_property = re.compile(
-    r'(?P<name>\S+)'
-    '\s*=\s*'
-    '(?P<expr>\S.*)'
-    '$'
-    ).match
-_text_is_link = re.compile(
-    r'(?P<name>\S+)'
-    '\s*->\s*'
-    '(?P<target>/\S+)'
-    '$'
-    ).match
-
 class CancelWatch(Exception):
     pass
 
@@ -118,6 +100,9 @@ class LinkLoop(Exception):
     pass
 
 class FailedConnect(Exception):
+    pass
+
+class BadPropertyLink(Exception):
     pass
 
 class ZooKeeper:
@@ -447,8 +432,18 @@ class ZooKeeper:
         print self.export_tree(path, True),
 
     def resolve(self, path, seen=()):
+        if path.endswith('/.'):
+            return self.resolve(path[:-2])
+        if path.endswith('/..'):
+            base = self.resolve(path[:-3])
+            if '/' in base:
+                return base.rsplit('/', 1)[0]
+            else:
+                raise zookeeper.NoNodeException(path)
+
         if self.exists(path):
             return path
+
         if path in seen:
             seen += (path,)
             raise LinkLoop(seen)
@@ -463,6 +458,9 @@ class ZooKeeper:
             newpath = props.get(name+' ->')
             if not newpath:
                 raise zookeeper.NoNodeException()
+
+            if not newpath[0] == '/':
+                newpath = base + '/' + newpath
 
             seen += (path,)
             return self.resolve(newpath, seen)
@@ -610,7 +608,8 @@ class NodeInfo:
             self.session.handle, self.path)
 
     def _notify(self, data):
-        self.setData(data)
+        if data is not None:
+            self.setData(data)
         for callback in list(self.callbacks):
             try:
                 callback(self)
@@ -640,24 +639,111 @@ class Properties(NodeInfo, collections.Mapping):
 
     event_type = zookeeper.CHANGED_EVENT
 
-    def setData(self, data):
-        sdata, self.meta_data = data
-        self.data = decode(sdata, self.path)
+    def __init__(self, *args):
+        self._linked_properties = {}
+        NodeInfo.__init__(self, *args)
 
-    def __getitem__(self, key):
-        return self.data[key]
+    def _setData(self, data, handle_errors=False):
+        # Save a mapping as our data.
+        # Set up watchers for any property links.
+        _linked_properties = {}
+        for name in data:
+            if name.endswith(' =>') and name[:-3] not in data:
+                link = data[name].strip().split()
+                try:
+                    if not (1 <= len(link) <= 2):
+                        raise ValueError('Bad link data')
+                    path = link.pop(0)
+                    if path[0] != '/':
+                        path = self.path + '/' + path
+                    path = self.session.resolve(path)
+                    properties = self._setup_link(path, _linked_properties)
+                    properties[link and link[0] or name[:-3]]
+                except Exception, v:
+                    if handle_errors:
+                        logger.exception(
+                            'Bad property link %r %r', name, data[name])
+                    else:
+                        raise ValueError("Bad property link",
+                                         name, data[name], v)
+
+        # Only after processing all links, do we update instance attrs:
+        self.data = data
+        self._linked_properties = _linked_properties
+
+    def _setup_link(self, path, _linked_properties=None):
+        if _linked_properties is None:
+            _linked_properties = self._linked_properties
+
+        props = _linked_properties.get(path, self)
+        if props is not self:
+            return props
+
+        props = self.session.properties(path)
+
+        _linked_properties[path] = props
+
+        def notify(properties=None):
+            if properties is None:
+                # A node we were watching was deleted.  We shuld try to
+                # re-resolve it. This doesn't happen often, let's just reset
+                # everything.
+                self._setData(self.data)
+            elif self._linked_properties.get(path) is properties:
+                self._notify(None)
+            else:
+                # We must not care about it anymore.
+                raise CancelWatch()
+
+        props.callbacks.append(notify)
+        return props
+
+    def setData(self, data):
+        # Called by upstream watchers.
+        sdata, self.meta_data = data
+        self._setData(decode(sdata, self.path), True)
+
+    def __getitem__(self, key, seen=()):
+        try:
+            return self.data[key]
+        except KeyError:
+            link = self.data.get(key + ' =>', self)
+            if link is self:
+                raise
+            try:
+                data = link.split()
+                if len(data) > 2:
+                    raise ValueError('Invalid property link')
+                path = data.pop(0)
+                if not path[0] == '/':
+                    path = self.path + '/' + path
+
+                path = self.session.resolve(path)
+                if path in seen:
+                    raise LinkLoop(seen+(path,))
+                seen += (path,)
+                properties = self._linked_properties.get(path)
+                if properties is None:
+                    properties = self._setup_link(path)
+                name = data and data[0] or key
+                return properties.__getitem__(name, seen)
+            except Exception, v:
+                raise BadPropertyLink(
+                    v, 'in %r: %r' %
+                    (key + ' =>', self.data[key + ' =>'])
+                    )
 
     def __len__(self):
         return len(self.data)
 
     def __contains__(self, key):
-        return key in self.data
+        return key in self.data or (key + ' =>') in self.data
 
     def copy(self):
         return self.data.copy()
 
     def _set(self, data):
-        self.data = data
+        self._setData(data)
         self.session._set(self.path, encode(data))
 
     def set(self, data=None, **properties):
@@ -676,6 +762,30 @@ class Properties(NodeInfo, collections.Mapping):
         # Gaaaa, collections.Mapping
         return hash(id(self))
 
+_text_is_node = re.compile(
+    r'/(?P<name>\S+)'
+    '(\s*:\s*(?P<type>\S.*))?'
+    '$').match
+_text_is_property = re.compile(
+    r'(?P<name>\S+)'
+    '\s*=\s*'
+    '(?P<expr>\S.*)'
+    '$'
+    ).match
+_text_is_link = re.compile(
+    r'(?P<name>\S+)'
+    '\s*->\s*'
+    '(?P<target>\S+)'
+    '$'
+    ).match
+_text_is_plink = re.compile(
+    r'(?P<name>\S+)'
+    '\s*=>\s*'
+    '(?P<target>\S+(\s+\S+)?)'
+    '(\s+(?P<pname>/\S+))?'
+    '$'
+    ).match
+
 def parse_tree(text):
     root = _Tree()
     indents = [(-1, root)] # sorted [(indent, node)]
@@ -685,34 +795,46 @@ def parse_tree(text):
         line = line.rstrip()
         if not line:
             continue
-        data = line.strip()
-        if data[0] == '#':
+        stripped = line.strip()
+        if stripped[0] == '#':
             continue
-        indent = len(line) - len(data)
+        indent = len(line) - len(stripped)
 
-        m = _text_is_property(data)
+        data = None
+
+        m = _text_is_plink(stripped)
         if m:
-            expr = m.group('expr')
-            try:
-                data = eval(expr, {})
-            except Exception, v:
-                raise ValueError("Error %s in expression: %r" % (v, expr))
-            data = m.group('name'), data
-        else:
-            m = _text_is_link(data)
+            data = (m.group('name') + ' =>'), m.group('target')
+
+        if data is None:
+            m = _text_is_property(stripped)
+            if m:
+                expr = m.group('expr')
+                try:
+                    data = eval(expr, {})
+                except Exception, v:
+                    raise ValueError(
+                        "Error %s in expression: %r in line %s" %
+                        (v, expr, lineno))
+                data = m.group('name'), data
+
+        if data is None:
+            m = _text_is_link(stripped)
             if m:
                 data = (m.group('name') + ' ->'), m.group('target')
+
+        if data is None:
+            m = _text_is_node(stripped)
+            if m:
+                data = _Tree(m.group('name'))
+                if m.group('type'):
+                    data.properties['type'] = m.group('type')
+
+        if data is None:
+            if '->' in stripped:
+                raise ValueError(lineno, stripped, "Bad link format")
             else:
-                m = _text_is_node(data)
-                if m:
-                    data = _Tree(m.group('name'))
-                    if m.group('type'):
-                        data.properties['type'] = m.group('type')
-                else:
-                    if '->' in data:
-                        raise ValueError(lineno, data, "Bad link format")
-                    else:
-                        raise ValueError(lineno, data, "Unrecognized data")
+                raise ValueError(lineno, stripped, "Unrecognized data")
 
         if indent > indents[-1][0]:
             if not isinstance(indents[-1][1], _Tree):

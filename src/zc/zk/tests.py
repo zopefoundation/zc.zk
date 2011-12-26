@@ -11,6 +11,7 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
+from pprint import pprint
 import doctest
 import json
 import logging
@@ -19,7 +20,6 @@ import manuel.doctest
 import manuel.testing
 import mock
 import os
-import pprint
 import re
 import StringIO
 import sys
@@ -634,7 +634,7 @@ When an expression is messed up, we get sane errors:
     Traceback (most recent call last):
     ...
     ValueError: Error unexpected EOF while parsing (<string>, line 1)
-    in expression: '1+'
+    in expression: '1+' in line 3
 
     >>> zk.import_tree('''
     ... /test
@@ -643,13 +643,6 @@ When an expression is messed up, we get sane errors:
     Traceback (most recent call last):
     ...
     ValueError: (3, 'a ->', 'Bad link format')
-
-    >>> zk.import_tree('''
-    ... /test
-    ...   a -> 1
-    ... ''') # doctest: +NORMALIZE_WHITESPACE
-    Traceback (most recent call last):
-    ValueError: (3, 'a -> 1', 'Bad link format')
 
     >>> zk.close()
     """
@@ -707,7 +700,7 @@ def property_set_and_update_variations():
     >>> data = zk.properties('/fooservice')
     >>> @data
     ... def _(data):
-    ...     pprint.pprint(dict(data), width=70)
+    ...     pprint(dict(data), width=70)
     {u'database': u'/databases/foomain',
      u'favorite_color': u'red',
      u'threads': 1}
@@ -780,6 +773,9 @@ def test_resolve():
     ...
     LinkLoop: ('/top/a/loop', u'/top/a/b/loop', u'/top/a/loop')
 
+    >>> zk.resolve('/top/a/b/c/d/./../..')
+    '/top/a/b'
+
     >>> zk.close()
     """
 
@@ -787,7 +783,7 @@ def test_ln_target_w_trailing_slash():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
     >>> zk.ln('/databases/main', '/fooservice/')
-    >>> pprint.pprint(zk.get_properties('/fooservice'))
+    >>> pprint(zk.get_properties('/fooservice'))
     {u' ->': u'/databases/main',
      u'database': u'/databases/foomain',
      u'favorite_color': u'red',
@@ -1035,6 +1031,239 @@ def register_server_at_root():
     ...
     >>> zk.close()
     """
+
+relative_property_links_data = """
+
+/a
+  /b
+    x => c x
+    xx => ./c x
+    x2 => .. x
+    x3 => ../c x
+    x22 => ./.. x
+    x33 => ./../c x
+    x333 => .././c x
+    /c
+      x=1
+  /c
+    x = 3
+  x = 2
+
+"""
+def relative_property_links():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree(relative_property_links_data)
+    >>> p = zk.properties('/a/b')
+    >>> p['x']
+    1
+    >>> p['xx']
+    1
+    >>> p['x2']
+    2
+    >>> p['x22']
+    2
+    >>> p['x3']
+    3
+    >>> p['x33']
+    3
+    >>> p['x333']
+    3
+    """
+
+def property_links_expand_callbacks_to_linked_nodes():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /a
+    ...   /b
+    ...     x => c
+    ...     xx => ../c
+    ...     /c
+    ...       x = 1
+    ...   /c
+    ...     x = 2
+    ... ''')
+
+    >>> ab = zk.properties('/a/b')
+
+    >>> @ab
+    ... def _(properties):
+    ...     print 'updated'
+    updated
+
+    >>> ac = zk.properties('/a/c')
+    >>> ac.update(x=3)
+    updated
+
+    >>> ab.update(xx=2)
+    updated
+
+    >>> ac.update(x=4)
+
+    """
+
+def bad_links_are_reported_and_prevent_updates():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> properties = zk.properties('/fooservice')
+
+    >>> properties.update({'c =>': '/a/b/c d'}, a=1, b=2, d=3, e=4)
+    ... # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    ValueError: ('Bad property link', 'c =>', '/a/b/c d',
+    NoNodeException('/a/b/c',))
+    >>> pprint(dict(properties), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+
+    >>> properties.update({'c =>': ''}, a=1, b=2, d=3, e=4)
+    ... # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    ValueError: ('Bad property link', 'c =>', '',
+    ValueError('Bad link data',))
+    >>> pprint(dict(properties), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+
+    >>> properties.update({'c =>': '/fooservice x'}, a=1, b=2, d=3, e=4)
+    Traceback (most recent call last):
+    ...
+    ValueError: ('Bad property link', 'c =>', '/fooservice x', KeyError('x',))
+    >>> pprint(dict(properties), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+
+    >>> properties.update({'c =>': '/fooservice threads x'}, a=1, b=2, d=3, e=4)
+    ... # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    ValueError: ('Bad property link', 'c =>', '/fooservice threads x',
+    ValueError('Bad link data',))
+    >>> pprint(dict(properties), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+
+    >>> properties.set({'c =>': '/a/b/c d'}, a=1, b=2, d=3, e=4)
+    ... # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    ValueError: ('Bad property link', 'c =>', '/a/b/c d',
+    NoNodeException('/a/b/c',))
+    >>> pprint(dict(properties), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+
+    >>> properties.set({'c =>': ''}, a=1, b=2, d=3, e=4)
+    Traceback (most recent call last):
+    ...
+    ValueError: ('Bad property link', 'c =>', '', ValueError('Bad link data',))
+    >>> pprint(dict(properties), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
+    """
+
+def contains_w_property_link():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> properties = zk.properties('/fooservice/providers')
+    >>> properties.update({'c =>': '.. threads'})
+    >>> 'c' in properties
+    True
+
+    """
+
+def property_getitem_error_handling():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.set('/fooservice/providers', json.dumps({
+    ... 'a =>': '/a/b',
+    ... 'b =>': '/fooservice threads x',
+    ... 'c =>': '',
+    ... }))
+    >>> properties = zk.properties('/fooservice/providers')
+    >>> properties['a']
+    Traceback (most recent call last):
+    ...
+    BadPropertyLink: (NoNodeException(u'/a/b',), "in 'a =>': u'/a/b'")
+    >>> properties['b'] # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    BadPropertyLink: (ValueError('Invalid property link',),
+    "in 'b =>': u'/fooservice threads x'")
+    >>> properties['c']
+    Traceback (most recent call last):
+    ...
+    BadPropertyLink: (IndexError('pop from empty list',), "in 'c =>': u''")
+    """
+
+def property_link_loops():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /a
+    ...   x => ../b x
+    ... /b
+    ...   x => ../a x
+    ... ''')
+    >>> properties = zk.properties('/a')
+    >>> properties['x'] # doctest: +NORMALIZE_WHITESPACE
+    Traceback (most recent call last):
+    ...
+    BadPropertyLink:
+    (BadPropertyLink(BadPropertyLink(LinkLoop((u'/b', u'/a', u'/b'),),
+    "in u'x =>': u'../b x'"), "in u'x =>': u'../a x'"), "in 'x =>': u'../b x'")
+
+    """
+
+def deleting_linked_nodes():
+    """
+    Links are reestablished after deleting a linked node.
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /a
+    ...   /b
+    ...     x => ../c
+    ...   /c
+    ...     x = 1
+    ... ''')
+
+    >>> ab = zk.properties('/a/b')
+
+    >>> @ab
+    ... def _(properties):
+    ...     print 'updated'
+    updated
+
+    >>> ab['x']
+    1
+
+    >>> zk.import_tree('''
+    ... /d
+    ...   x = 2
+    ... ''')
+
+    >>> _ = zk.set('/a', '{"c ->": "/d"}')
+    >>> _ = zk.delete('/a/c')
+    updated
+    >>> ab['x']
+    2
+
+    """
+
+
+
+# XXX
+# deleting linked node
 
 event = threading.Event()
 def check_async(show=True, expected_status=0):

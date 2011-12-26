@@ -536,6 +536,102 @@ updates::
     >>> dict(main_properties)
     {u'a': 1}
 
+Symbolic links can be relative. If a link doesn't start with a slash,
+it's interpreted relative to the node the link occurs in.  The special
+names ``.`` and ``..`` have their usual meanings.
+
+So, in::
+
+    /a
+      /b
+        l -> c
+        l2 -> ../c
+        /c
+      /c
+
+.. -> relative_link_source
+
+    >>> zk.import_tree(relative_link_source)
+    >>> zk.resolve('/a/b/l')
+    u'/a/b/c'
+    >>> zk.resolve('/a/b/l2')
+    u'/a/c'
+
+    >>> zk.delete_recursive('/a')
+
+The link at ``/a/b/l`` resolves to ``/a/b/c`` and ``/a/b/l2`` resolves
+to ``/a/c``.
+
+Property links
+==============
+
+In addition to symbolic links between nodes, you can have links
+between properties.  In our earlier example, both the ``/cms`` and
+``/fooservice`` nodes had ``threads`` properties::
+
+    /cms : z4m cms
+      threads = 4
+      /databases
+        /main
+          /providers
+      /providers
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb : ipvs
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+
+If we wanted ``/cms`` to have the same ``threads`` settings, we could
+use a property link::
+
+    /cms : z4m cms
+      threads => /fooservice threads
+      /databases
+        /main
+          /providers
+      /providers
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+    /lb : ipvs
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+
+.. -> property_link_source
+
+    >>> _ = zk.create('/test-propery-links', '', zc.zk.OPEN_ACL_UNSAFE)
+
+    >>> zk.import_tree(property_link_source, '/test-propery-links')
+    >>> properties = zk.properties('/test-propery-links/cms')
+    >>> properties['threads =>']
+    u'/fooservice threads'
+    >>> properties['threads']
+    3
+
+    >>> zk.import_tree('/cms\n  threads => /fooservice\n',
+    ...                '/test-propery-links')
+    extra path not trimmed: /test-propery-links/cms/databases
+    extra path not trimmed: /test-propery-links/cms/providers
+    >>> properties['threads =>']
+    u'/fooservice'
+    >>> properties['threads']
+    3
+
+    >>> zk.delete_recursive('/test-propery-links')
+
+Property links are indicated with ``=>``. The value is a node path and
+optional property name, separated by whitespace.  If the name is
+ommitted, then the refering name is used.  For example, the name could
+be left off of the property link above.
+
+
 Node deletion
 =============
 
@@ -892,6 +988,14 @@ more, use the help function::
 
 Change History
 ==============
+
+0.5.0 (2011-12-??)
+------------------
+
+- Symbolic links can now be relative and use ``.`` and ``..`` in the
+  usual way.
+
+- Added property links.
 
 0.4.0 (2011-12-12)
 ------------------
