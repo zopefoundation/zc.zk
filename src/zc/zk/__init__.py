@@ -105,7 +105,46 @@ class FailedConnect(Exception):
 class BadPropertyLink(Exception):
     pass
 
-class ZooKeeper:
+class Resolving:
+
+    def resolve(self, path, seen=()):
+        if path.endswith('/.'):
+            return self.resolve(path[:-2])
+        if path.endswith('/..'):
+            base = self.resolve(path[:-3])
+            if '/' in base:
+                return base.rsplit('/', 1)[0]
+            else:
+                raise zookeeper.NoNodeException(path)
+
+        if self.exists(path):
+            return path
+
+        if path in seen:
+            seen += (path,)
+            raise LinkLoop(seen)
+
+        try:
+            base, name = path.rsplit('/', 1)
+            base = self.resolve(base, seen)
+            newpath = base + '/' + name
+            if self.exists(newpath):
+                return newpath
+            props = self.get_properties(base)
+            newpath = props.get(name+' ->')
+            if not newpath:
+                raise zookeeper.NoNodeException()
+
+            if not newpath[0] == '/':
+                newpath = base + '/' + newpath
+
+            seen += (path,)
+            return self.resolve(newpath, seen)
+        except zookeeper.NoNodeException:
+            raise zookeeper.NoNodeException(path)
+
+
+class ZooKeeper(Resolving):
 
     def __init__(self, connection_string="127.0.0.1:2181", session_timeout=None,
                  wait=False):
@@ -431,42 +470,6 @@ class ZooKeeper:
     def print_tree(self, path='/'):
         print self.export_tree(path, True),
 
-    def resolve(self, path, seen=()):
-        if path.endswith('/.'):
-            return self.resolve(path[:-2])
-        if path.endswith('/..'):
-            base = self.resolve(path[:-3])
-            if '/' in base:
-                return base.rsplit('/', 1)[0]
-            else:
-                raise zookeeper.NoNodeException(path)
-
-        if self.exists(path):
-            return path
-
-        if path in seen:
-            seen += (path,)
-            raise LinkLoop(seen)
-
-        try:
-            base, name = path.rsplit('/', 1)
-            base = self.resolve(base, seen)
-            newpath = base + '/' + name
-            if self.exists(newpath):
-                return newpath
-            props = self.get_properties(base)
-            newpath = props.get(name+' ->')
-            if not newpath:
-                raise zookeeper.NoNodeException()
-
-            if not newpath[0] == '/':
-                newpath = base + '/' + newpath
-
-            seen += (path,)
-            return self.resolve(newpath, seen)
-        except zookeeper.NoNodeException:
-            raise zookeeper.NoNodeException(path)
-
     def _set(self, path, data):
         return self.set(path, data)
 
@@ -786,8 +789,17 @@ _text_is_plink = re.compile(
     '$'
     ).match
 
-def parse_tree(text):
-    root = _Tree()
+class ParseNode:
+
+    def __init__(self, name='', properties=None, **children):
+        self.name = name
+        self.properties = properties or {}
+        self.children = children
+        for name, child in children.iteritems():
+            child.name = name
+
+def parse_tree(text, node_class=ParseNode):
+    root = node_class()
     indents = [(-1, root)] # sorted [(indent, node)]
     lineno = 0
     for line in text.split('\n'):
@@ -826,7 +838,7 @@ def parse_tree(text):
         if data is None:
             m = _text_is_node(stripped)
             if m:
-                data = _Tree(m.group('name'))
+                data = node_class(m.group('name'))
                 if m.group('type'):
                     data.properties['type'] = m.group('type')
 
@@ -837,7 +849,7 @@ def parse_tree(text):
                 raise ValueError(lineno, stripped, "Unrecognized data")
 
         if indent > indents[-1][0]:
-            if not isinstance(indents[-1][1], _Tree):
+            if not isinstance(indents[-1][1], node_class):
                 raise ValueError(
                     lineno, line,
                     "Can't indent under properties")
@@ -849,7 +861,7 @@ def parse_tree(text):
             if indent > indents[-1][0]:
                 raise ValueError(lineno, data, "Invalid indentation")
 
-        if isinstance(data, _Tree):
+        if isinstance(data, node_class):
             children = indents[-2][1].children
             if data.name in children:
                 raise ValueError(lineno, data, 'duplicate node')
@@ -865,16 +877,6 @@ def parse_tree(text):
             properties[name] = value
 
     return root
-
-class _Tree:
-    # Internal tree rep for import/export
-
-    def __init__(self, name='', properties=None, **children):
-        self.name = name
-        self.properties = properties or {}
-        self.children = children
-        for name, child in children.iteritems():
-            child.name = name
 
 class RegisteringServer:
     """Event emitted while a server is being registered.

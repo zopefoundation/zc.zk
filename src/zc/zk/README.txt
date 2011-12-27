@@ -997,6 +997,14 @@ Change History
 
 - Added property links.
 
+- Rearranged code internally to make certain experiments with the tree
+  representation easier:
+
+  - The link-resolution code is ow separated into a separate base
+    class so it can be used with parse trees.
+
+  - ``parse_tree`` now accepts an optional node class.
+
 0.4.0 (2011-12-12)
 ------------------
 
