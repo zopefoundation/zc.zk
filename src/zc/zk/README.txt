@@ -989,7 +989,7 @@ more, use the help function::
 Change History
 ==============
 
-0.5.0 (2011-12-??)
+0.5.0 (2011-12-27)
 ------------------
 
 - Symbolic links can now be relative and use ``.`` and ``..`` in the
