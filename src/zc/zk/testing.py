@@ -23,6 +23,7 @@ import json
 import mock
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -257,6 +258,8 @@ exception_codes = {
     zookeeper.UnimplementedException: zookeeper.UNIMPLEMENTED,
 }
 
+badpath = re.compile(r'(^([^/]|$))|(/\.\.?(/|$))|(./$)').search
+
 class ZooKeeper:
 
     def __init__(self, connection_string, tree):
@@ -400,6 +403,8 @@ class ZooKeeper:
     def exists(self, handle, path, watch=None):
         if watch is not None:
             raise TypeError('exists watch not supported')
+        if badpath(path):
+            raise zookeeper.BadArgumentsException('bad argument')
         with self.lock:
             self._check_handle(handle)
             try:
@@ -418,7 +423,7 @@ class ZooKeeper:
             node = self._traverse(path)
             if watch:
                 node.child_watchers += ((handle, watch), )
-            return sorted(node.children)
+            return list(node.children)
 
     def aget_children(self, handle, path, watch=None, completion=None):
         return self._doasync(completion, handle, 1,

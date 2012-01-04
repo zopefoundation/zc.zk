@@ -1069,6 +1069,7 @@ def relative_property_links():
     3
     >>> p['x333']
     3
+    >>> zk.close()
     """
 
 def property_links_expand_callbacks_to_linked_nodes():
@@ -1101,6 +1102,7 @@ def property_links_expand_callbacks_to_linked_nodes():
 
     >>> ac.update(x=4)
 
+    >>> zk.close()
     """
 
 def bad_links_are_reported_and_prevent_updates():
@@ -1169,6 +1171,8 @@ def bad_links_are_reported_and_prevent_updates():
     {u'database': u'/databases/foomain',
      u'favorite_color': u'red',
      u'threads': 1}
+
+    >>> zk.close()
     """
 
 def contains_w_property_link():
@@ -1179,6 +1183,7 @@ def contains_w_property_link():
     >>> 'c' in properties
     True
 
+    >>> zk.close()
     """
 
 def property_getitem_error_handling():
@@ -1203,6 +1208,8 @@ def property_getitem_error_handling():
     Traceback (most recent call last):
     ...
     BadPropertyLink: (IndexError('pop from empty list',), "in 'c =>': u''")
+
+    >>> zk.close()
     """
 
 def property_link_loops():
@@ -1222,6 +1229,7 @@ def property_link_loops():
     (BadPropertyLink(BadPropertyLink(LinkLoop((u'/b', u'/a', u'/b'),),
     "in u'x =>': u'../b x'"), "in u'x =>': u'../a x'"), "in 'x =>': u'../b x'")
 
+    >>> zk.close()
     """
 
 def deleting_linked_nodes():
@@ -1258,6 +1266,7 @@ def deleting_linked_nodes():
     >>> ab['x']
     2
 
+    >>> zk.close()
     """
 
 

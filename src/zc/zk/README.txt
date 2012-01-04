@@ -989,6 +989,16 @@ more, use the help function::
 Change History
 ==============
 
+0.5.1 (2012-01-04)
+------------------
+
+- Fixed incompatibilities with ZooKeeper 3.3.4
+
+  - ZooKeeper raises a ``zookeeper.BadArgumentsException`` when an
+    invalid path is passed to ``exists``. Previously, returned False.
+
+  - ``get_children`` no-longer returnes ordered values.
+
 0.5.0 (2011-12-27)
 ------------------
 

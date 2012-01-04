@@ -117,8 +117,12 @@ class Resolving:
             else:
                 raise zookeeper.NoNodeException(path)
 
-        if self.exists(path):
-            return path
+        try:
+            if self.exists(path):
+                return path
+        except zookeeper.BadArgumentsException:
+            if not path[:1] == '/':
+                raise zookeeper.NoNodeException(path)
 
         if path in seen:
             seen += (path,)
@@ -355,7 +359,7 @@ class ZooKeeper(Resolving):
     def _import_tree(self, path, node, acl, trim, dry_run, top=False):
         if not top:
             new_children = set(node.children)
-            for name in self.get_children(path):
+            for name in sorted(self.get_children(path)):
                 if name in new_children:
                     continue
                 cpath = join(path, name)
@@ -364,7 +368,7 @@ class ZooKeeper(Resolving):
                 else:
                     print 'extra path not trimmed:', cpath
 
-        for name, child in node.children.iteritems():
+        for name, child in sorted(node.children.iteritems()):
             cpath = path + '/' + name
             data = encode(child.properties)
             if self.exists(cpath):
