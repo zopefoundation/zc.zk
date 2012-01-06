@@ -21,7 +21,7 @@ def export(args=None):
         args = sys.argv[1:]
 
     parser = optparse.OptionParser("""
-    Usage: %(prog)s [options] connection [path]
+    Usage: %prog [options] connection [path]
     """)
     parser.add_option('-e', '--ephemeral', action='store_true')
     parser.add_option('-o', '--output')
