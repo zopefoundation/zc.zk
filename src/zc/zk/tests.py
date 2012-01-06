@@ -1325,9 +1325,14 @@ def test_suite():
         suite.addTest(unittest.makeSuite(LoggingTests))
         suite.addTest(doctest.DocFileSuite(
             'ephemeral_node_recovery_on_session_reestablishment.test',
-            'wait_for_zookeeper.test',
             setUp=setUpEphemeral_node_recovery_on_session_reestablishment,
             tearDown=zc.zk.testing.tearDown,
             checker=checker,
             ))
+        suite.addTest(doctest.DocTestSuite(
+            'zc.zk.disconnectiontests',
+            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            checker=checker,
+            ))
+
     return suite
