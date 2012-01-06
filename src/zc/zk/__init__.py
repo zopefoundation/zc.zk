@@ -46,6 +46,10 @@ def loggingthread():
             if '@' in line:
                 level, message = line.split('@', 1)
                 level = levels.get(level.split(':')[-1])
+
+                if 'Exceeded deadline by' in line and level == logging.WARNING:
+                    level = logging.DEBUG
+
             else:
                 level = None
 

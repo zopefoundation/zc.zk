@@ -989,14 +989,20 @@ more, use the help function::
 Change History
 ==============
 
-0.5.1 (2012-01-06)
+0.5.2 (2012-01-06)
 ------------------
 
-- Fixed bug:
+- ZooKeeper node data and child watchers are called on session
+  expiry.  This was unexpected.  The data and child handler
+  functions now handle these events more gracefully.
 
-  - ZooKeeper node data and child watchers are called on session
-    expiry.  This was unexpected.  The data and child handler
-    functions now handle these events more gracefully.
+- The ZooKeeper C library is excessively chatty about something that
+  people don't know how to care about it:
+
+    https://issues.apache.org/jira/browse/ZOOKEEPER-642
+
+  Until this is fixed, the log level for these messages is converted
+  to DEBUG.
 
 0.5.1 (2012-01-04)
 ------------------

@@ -36,19 +36,38 @@ import unittest
 class LoggingTests(unittest.TestCase):
 
     def test_logging(self):
-        logger = logging.getLogger('ZooKeeper')
-        f = StringIO.StringIO()
-        h = logging.StreamHandler(f)
-        logger.addHandler(h)
-        logger.setLevel(logging.DEBUG)
+        handler = zope.testing.loggingsupport.InstalledHandler(
+            'ZooKeeper')
         try:
             handle = zookeeper.init('zookeeper.example.com:2181')
             zookeeper.close(handle)
         except:
             pass
-        zc.zk.testing.wait_until(lambda : 'environment' in f.getvalue())
-        logger.setLevel(logging.NOTSET)
-        logger.removeHandler(h)
+
+        zc.zk.testing.wait_until(
+            lambda : [r for r in handler.records
+                      if 'environment' in r.getMessage()]
+            )
+        handler.clear()
+
+        # Test that the filter for the "Exceeded deadline by" noise works.
+        # cheat and bypass zk by writing to the pipe directly.
+        os.write(zc.zk._logging_pipe[1],
+                 '2012-01-06 16:45:44,572:43673(0x1004f6000):ZOO_WARN@'
+                 'zookeeper_interest@1461: Exceeded deadline by 27747ms\n')
+        zc.zk.testing.wait_until(
+            lambda : [r for r in handler.records
+                      if ('Exceeded deadline by' in r.getMessage()
+                          and r.levelno == logging.DEBUG)
+                      ]
+            )
+
+        self.assert_(not [r for r in handler.records
+                          if ('Exceeded deadline by' in r.getMessage()
+                              and r.levelno == logging.WARNING)
+                          ])
+
+        handler.uninstall()
 
 def side_effect(mock):
     return lambda func: setattr(mock, 'side_effect', func)
