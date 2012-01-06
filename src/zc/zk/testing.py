@@ -201,7 +201,7 @@ class Session:
     def __init__(self, zk, handle, watch=None, session_timeout=None):
         self.zk = zk
         self.handle = handle
-        self.nodes = set()
+        self.nodes = set() # ephemeral nodes
         self.add = self.nodes.add
         self.remove = self.nodes.remove
         self.watch = watch
@@ -215,7 +215,8 @@ class Session:
         self.newstate(zookeeper.CONNECTING_STATE)
 
     def expire(self):
-        self.zk._clear_session(self)
+        self.zk._clear_session(
+            self, zookeeper.SESSION_EVENT, zookeeper.EXPIRED_SESSION_STATE)
         self.newstate(zookeeper.EXPIRED_SESSION_STATE)
 
     def newstate(self, state):
@@ -309,9 +310,9 @@ class ZooKeeper:
 
         return node
 
-    def _clear_session(self, session):
+    def _clear_session(self, session, event=None, state=None):
         with self.lock:
-            self.root.clear_watchers(session.handle)
+            self.root.clear_watchers(session.handle, event, state)
             for path in list(session.nodes):
                 self._delete(session.handle, path)
 
@@ -535,7 +536,15 @@ class Node:
         for h, w in watchers:
             w(h, zookeeper.DELETED_EVENT, state, path)
 
-    def clear_watchers(self, handle):
+    def clear_watchers(self, handle, event, state, path='/'):
+        if state is not None:
+            for (h, w) in self.watchers:
+                if h == handle:
+                    w(h, event, state, path)
+            for (h, w) in self.child_watchers:
+                if h == handle:
+                    w(h, event, state, path)
+
         self.watchers = tuple(
             (h, w) for (h, w) in self.watchers
             if h != handle
@@ -544,5 +553,5 @@ class Node:
             (h, w) for (h, w) in self.child_watchers
             if h != handle
             )
-        for child in self.children.itervalues():
-            child.clear_watchers(handle)
+        for name, child in self.children.items():
+            child.clear_watchers(handle, event, state, path + '/' + name)

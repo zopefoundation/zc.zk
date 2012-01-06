@@ -304,6 +304,15 @@ class ZooKeeper(Resolving):
         zkfunc = getattr(zookeeper, self.__zkfuncs[event_type])
 
         def handler(h, t, state, p, reraise=False):
+
+            if state != zookeeper.CONNECTED_STATE:
+                # This can happen if we get disconnected or a session expires.
+                # When we reconnect, we should restablish the watchers.
+                logger.warning(
+                    "Node watcher event %r with non-connected state, %r",
+                    t, state)
+                return
+
             try:
                 assert h == self.handle
                 assert state == zookeeper.CONNECTED_STATE

@@ -989,6 +989,15 @@ more, use the help function::
 Change History
 ==============
 
+0.5.1 (2012-01-06)
+------------------
+
+- Fixed bug:
+
+  - ZooKeeper node data and child watchers are called on session
+    expiry.  This was unexpected.  The data and child handler
+    functions now handle these events more gracefully.
+
 0.5.1 (2012-01-04)
 ------------------
 
