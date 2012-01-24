@@ -978,6 +978,33 @@ __getitem__, __len__, etc..
 
     The ``Properties`` instance is returned.
 
+Other module attributes
+------------------------
+
+``zc.zk.ZK``
+   A convenient aliad for ``zc.zk.ZooKeeper`` for people who hate to
+   type.
+
+``zc.zk.OPEN_ACL_UNSAFE``
+   An access control list that grants the world all rights.
+
+``zc.zk.READ_ACL_UNSAFE``
+   An access control list that gives the world read access only.
+
+.. test
+
+    >>> zc.zk.ZK is zc.zk.ZooKeeper
+    True
+
+    >>> import zookeeper
+    >>> zc.zk.OPEN_ACL_UNSAFE == [
+    ...     dict(perms=zookeeper.PERM_ALL, scheme='world', id='anyone')]
+    True
+
+    >>> zc.zk.READ_ACL_UNSAFE == [
+    ...     dict(perms=zookeeper.PERM_READ, scheme='world', id='anyone')]
+    True
+
 Testing support
 ---------------
 
@@ -1001,6 +1028,11 @@ Change History
 
 - ``delete_recursive`` now has a ``force`` argument to force deletion of
   ephemeral nodes.
+
+- Added ``zc.zk.ZK`` as an alias for ``zc.zk.ZooKeeper``.
+
+- Documented pre-defined access control lists
+  ``zc.zk.OPEN_ACL_UNSAFE`` and ``zc.zk.READ_ACL_UNSAFE``
 
 - Fixed: the ``dry_run`` argument to ``delete_recursive`` didn't work
   properly.
