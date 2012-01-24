@@ -413,7 +413,9 @@ delete_recursive::
           address = u'1.2.3.4:80'
           providers -> /cms/providers
 
-You can't delete nodes ephemeral nodes, or nodes that contain them::
+
+Bt default, ``delete_recursive`` won't delete ephemeral nodes, or
+nodes that contain them::
 
     >>> zk.delete_recursive('/fooservice')
     Not deleting /fooservice/providers/192.168.0.42:8080 because it's ephemeral.
@@ -421,6 +423,9 @@ You can't delete nodes ephemeral nodes, or nodes that contain them::
     Not deleting /fooservice/providers/192.168.0.42:8082 because it's ephemeral.
     /fooservice/providers not deleted due to ephemeral descendent.
     /fooservice not deleted due to ephemeral descendent.
+
+You can use the ``force`` option to force ephemeral nodes to be
+deleted.
 
 Symbolic links
 ==============
@@ -818,10 +823,12 @@ zc.zk.ZooKeeper
     This should be called when cleanly shutting down servers to more
     quickly remove ephemeral nodes.
 
-``delete_recursive(path[, dry_run])``
+``delete_recursive(path[, dry_run[, force]])``
    Delete a node and all of it's sub-nodes.
 
-   Ephemeral nodes or nodes containing them are not deleted.
+   Ephemeral nodes or nodes containing them are not deleted by
+   default. To force deletion of ephemeral nodes, supply the ``force``
+   option with a true value.
 
    The dry_run option causes a summary of what would be deleted to be
    printed without actually deleting anything.
@@ -988,6 +995,15 @@ more, use the help function::
 
 Change History
 ==============
+
+0.6.0 (2012-01-??)
+------------------
+
+- ``delete_recursive`` now has a ``force`` argument to force deletion of
+  ephemeral nodes.
+
+- Fixed: the ``dry_run`` argument to ``delete_recursive`` didn't work
+  properly.
 
 0.5.2 (2012-01-06)
 ------------------

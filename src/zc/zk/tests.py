@@ -1288,6 +1288,49 @@ def deleting_linked_nodes():
     >>> zk.close()
     """
 
+def delete_recursive_dry_run():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.delete_recursive('/fooservice', dry_run=True)
+    would delete /fooservice/providers.
+    would delete /fooservice.
+
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+
+    >>> zk.close()
+    """
+
+def delete_recursive_force():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice/providers', 'a:b')
+
+    >>> zk.delete_recursive('/fooservice', dry_run=True, force=True)
+    would delete /fooservice/providers/a:b.
+    would delete /fooservice/providers.
+    would delete /fooservice.
+
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+        /a:b
+          pid = 29093
+
+    >>> zk.delete_recursive('/fooservice', force=True)
+
+    >>> zk.print_tree()
+    <BLANKLINE>
+
+    >>> zk.close()
+    """
 
 
 # XXX

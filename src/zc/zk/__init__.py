@@ -423,15 +423,22 @@ class ZooKeeper(Resolving):
                     self.create(cpath, data, acl)
             self._import_tree(cpath, child, acl, trim, dry_run)
 
-    def delete_recursive(self, path, dry_run=False):
+    def delete_recursive(self, path, dry_run=False, force=False):
+        self._delete_recursive(path, dry_run, force)
+
+    def _delete_recursive(self, path, dry_run, force):
+        ephemeral_child = None
         for name in sorted(self.get_children(path)):
-            self.delete_recursive(join(path, name))
+            ephemeral_child = (
+                self._delete_recursive(join(path, name), dry_run, force) or
+                ephemeral_child
+                )
 
-        if self.get_children(path):
+        if ephemeral_child:
             print "%s not deleted due to ephemeral descendent." % path
-            return
+            return ephemeral_child
 
-        ephemeral = self.get(path)[1]['ephemeralOwner']
+        ephemeral = self.get(path)[1]['ephemeralOwner'] and not force
         if dry_run:
             if ephemeral:
                 print "wouldn't delete %s because it's ephemeral." % path
@@ -443,6 +450,7 @@ class ZooKeeper(Resolving):
             else:
                 logger.info('deleting %s', path)
                 self.delete(path)
+        return ephemeral
 
     def export_tree(self, path='/', ephemeral=False, name=None):
         output = []
@@ -597,6 +605,7 @@ class WatchManager:
                 if v is not None:
                     yield v
 
+ZK = ZooKeeper
 
 class NodeInfo:
 
