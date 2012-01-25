@@ -760,6 +760,92 @@ ZooKeeper tree::
 The export script provides the same features as the ``export_tree``
 method. Use the ``--help`` option to see how to use it.
 
+zookeeper_import script
+=======================
+
+The `zc.zk` package provides a utility script for importing a
+ZooKeeper tree.  So, for example, given the tree::
+
+  /provision
+    /node1
+    /node2
+
+.. -> file_source
+
+    >>> with open('mytree.txt', 'w') as f: f.write(file_source)
+
+In the file ``mytree.txt``, we can import the file like this::
+
+    $ zookeeper_import zookeeper.example.com:2181 mytree.txt /fooservice
+
+.. -> sh
+
+    >>> command = sh.strip()
+    >>> expected = ''
+    >>> _, command, args = command.split(None, 2)
+    >>> import_ = pkg_resources.load_entry_point(
+    ...     'zc.zk', 'console_scripts', command)
+    >>> import_(args.split())
+
+    >>> zk.print_tree()
+    /cms : z4m cms
+      threads = 4
+      /databases
+        main -> /databases/cms
+      /providers
+        /1.2.3.4:5
+          pid = 4102
+    /databases
+      /cms
+        a = 1
+    /fooservice
+      secret = u'1234'
+      threads = 3
+      /providers
+        /192.168.0.42:8080
+          pid = 4102
+        /192.168.0.42:8081
+          pid = 4102
+        /192.168.0.42:8082
+          pid = 4102
+      /provision
+        /node1
+        /node2
+    /lb : ipvs
+      /pools
+        /cms
+          address = u'1.2.3.4:80'
+          providers -> /cms/providers
+
+  Read from stdin:
+
+    >>> stdin = sys.stdin
+    >>> sys.stdin = StringIO.StringIO('/x\n/y')
+    >>> import_('-d zookeeper.example.com:2181 - /fooservice'.split())
+    add /fooservice/x
+    add /fooservice/y
+
+    >>> sys.stdin = StringIO.StringIO('/x\n/y')
+    >>> import_('-d zookeeper.example.com:2181'.split())
+    add /x
+    add /y
+
+  Trim:
+
+    >>> sys.stdin = StringIO.StringIO('/provision\n/y')
+    >>> import_('-dt zookeeper.example.com:2181 - /fooservice'.split())
+    would delete /fooservice/provision/node1.
+    would delete /fooservice/provision/node2.
+    add /fooservice/y
+
+    >>> sys.stdin = stdin
+
+The import script provides the same features as the ``import_tree``
+method, with the exception that it provides less flexibility for
+specifing access control lists. Use the ``--help`` option to see how
+to use it.
+
+
 Graph analysis
 ==============
 
@@ -1018,13 +1104,15 @@ more, use the help function::
 Change History
 ==============
 
-0.6.0 (2012-01-??)
+0.6.0 (2012-01-25)
 ------------------
 
 - Improved ``register_server`` in the case when an empty host is
   passed.  If `netifaces
   <http://alastairs-place.net/projects/netifaces/>`_ is installed,
   ``register_server`` registers all of the IPv4 addresses [#ifaces]_.
+
+- Added ``zookeeper_import`` shell script for importing ZooKeeper trees.
 
 - ``delete_recursive`` now has a ``force`` argument to force deletion of
   ephemeral nodes.

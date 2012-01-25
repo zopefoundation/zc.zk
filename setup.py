@@ -23,6 +23,7 @@ extras_require = dict(
 entry_points = """
 [console_scripts]
 zookeeper_export = zc.zk.scripts:export
+zookeeper_import = zc.zk.scripts:import_
 """
 
 from setuptools import setup
