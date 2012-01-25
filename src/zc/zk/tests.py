@@ -21,6 +21,7 @@ import manuel.testing
 import mock
 import os
 import re
+import socket
 import StringIO
 import sys
 import threading
@@ -135,6 +136,123 @@ class Tests(unittest.TestCase):
             self.assertEqual(flags, zookeeper.EPHEMERAL)
 
         self.__zk.register_server('/foo', ('127.0.0.1', 8080), a=1)
+        self.__zk.register_server('/foo', '127.0.0.1:8080', a=1)
+
+    @mock.patch('netifaces.ifaddresses')
+    @mock.patch('netifaces.interfaces')
+    @mock.patch('zookeeper.create')
+    def test_register_server_blank(self, create, interfaces, ifaddresses):
+        addrs = {
+            'eth0': {2: [{'addr': '192.168.24.60',
+                          'broadcast': '192.168.24.255',
+                          'netmask': '255.255.255.0'}],
+                     10: [{'addr': 'fe80::21c:c0ff:fe1a:d12%eth0',
+                           'netmask': 'ffff:ffff:ffff:ffff::'}],
+                     17: [{'addr': '00:1c:c0:1a:0d:12',
+                           'broadcast': 'ff:ff:ff:ff:ff:ff'}]},
+            'foo': {2: [{'addr': '192.168.24.61',
+                         'broadcast': '192.168.24.255',
+                         'netmask': '255.255.255.0'}],
+                    },
+            'lo': {2: [{'addr': '127.0.0.1',
+                        'netmask': '255.0.0.0',
+                        'peer': '127.0.0.1'}],
+                   10: [{'addr': '::1',
+                         'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
+                   17: [{'addr': '00:00:00:00:00:00',
+                         'peer': '00:00:00:00:00:00'}],
+                   },
+            }
+
+        @side_effect(interfaces)
+        def _():
+            return list(addrs)
+
+        @side_effect(ifaddresses)
+        def _(iface):
+            return addrs[iface]
+
+        @side_effect(create)
+        def _(handle, path_, data, acl, flags):
+            self.assertEqual(handle, 0)
+            paths.append(path_)
+            self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
+            self.assertEqual(acl, [zc.zk.world_permission()])
+            self.assertEqual(flags, zookeeper.EPHEMERAL)
+
+        paths = []
+        self.__zk.register_server('/foo', ('', 8080), a=1)
+        self.assertEqual(sorted(paths),
+                         ['/foo/192.168.24.60:8080', '/foo/192.168.24.61:8080'])
+
+        paths = []
+        self.__zk.register_server('/foo', ':8080', a=1)
+        self.assertEqual(sorted(paths),
+                         ['/foo/192.168.24.60:8080', '/foo/192.168.24.61:8080'])
+
+    @mock.patch('netifaces.ifaddresses')
+    @mock.patch('netifaces.interfaces')
+    @mock.patch('zookeeper.create')
+    def test_register_server_blank_nonet(self, create, interfaces, ifaddresses):
+        addrs = {
+            'lo': {2: [{'addr': '127.0.0.1',
+                        'netmask': '255.0.0.0',
+                        'peer': '127.0.0.1'}],
+                   10: [{'addr': '::1',
+                         'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
+                   17: [{'addr': '00:00:00:00:00:00',
+                         'peer': '00:00:00:00:00:00'}]},
+            }
+
+        @side_effect(interfaces)
+        def _():
+            return list(addrs)
+
+        @side_effect(ifaddresses)
+        def _(iface):
+            return addrs[iface]
+
+        @side_effect(create)
+        def _(handle, path_, data, acl, flags):
+            self.assertEqual(handle, 0)
+            paths.append(path_)
+            self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
+            self.assertEqual(acl, [zc.zk.world_permission()])
+            self.assertEqual(flags, zookeeper.EPHEMERAL)
+
+        paths = []
+        self.__zk.register_server('/foo', ('', 8080), a=1)
+        self.assertEqual(sorted(paths), ['/foo/127.0.0.1:8080'])
+
+        paths = []
+        self.__zk.register_server('/foo', ':8080', a=1)
+        self.assertEqual(sorted(paths), ['/foo/127.0.0.1:8080'])
+
+    @mock.patch('zookeeper.create')
+    @mock.patch('socket.getfqdn')
+    def test_register_server_blank_nonetifaces(self, getfqdn, create):
+
+        netifaces = sys.modules['netifaces']
+        try:
+            sys.modules['netifaces'] = None
+
+            @side_effect(getfqdn)
+            def _():
+                return 'nonexistenttestserver.zope.com'
+
+            @side_effect(create)
+            def _(handle, path_, data, acl, flags):
+                self.assertEqual(
+                    (handle, path_),
+                    (0, '/foo/nonexistenttestserver.zope.com:8080'))
+                self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
+                self.assertEqual(acl, [zc.zk.world_permission()])
+                self.assertEqual(flags, zookeeper.EPHEMERAL)
+
+            self.__zk.register_server('/foo', ('', 8080), a=1)
+            self.__zk.register_server('/foo', ':8080', a=1)
+        finally:
+            sys.modules['netifaces'] = netifaces
 
     @mock.patch('zookeeper.close')
     @mock.patch('zookeeper.init')

@@ -207,20 +207,43 @@ class ZooKeeper(Resolving):
                 raise FailedConnect(connection_string)
 
 
+    def _findallipv4addrs(self, tail):
+        try:
+            import netifaces
+        except ImportError:
+            return [socket.getfqdn()+tail]
+
+        addrs = set()
+        loopaddrs = set()
+        for iface in netifaces.interfaces():
+            for info in netifaces.ifaddresses(iface).get(2, ()):
+                addr = info.get('addr')
+                if addr:
+                    if addr.startswith('127.'):
+                        loopaddrs.add(addr+tail)
+                    else:
+                        addrs.add(addr+tail)
+
+        return addrs or loopaddrs
+
     def register_server(self, path, addr, acl=READ_ACL_UNSAFE, **kw):
         kw['pid'] = os.getpid()
-        if isinstance(addr, str):
-            if addr[:1] == ':':
-                addr = socket.getfqdn()+addr
+
+        if not isinstance(addr, str):
+            addr = '%s:%s' % tuple(addr)
+
+        if addr[:1] == ':':
+            addrs = self._findallipv4addrs(addr)
         else:
-            if addr[0] == '':
-                addr = socket.getfqdn(), addr[1]
-            addr = '%s:%s' % addr
+            addrs = (addr,)
+
         path = self.resolve(path)
         zc.zk.event.notify(RegisteringServer(addr, path, kw))
         if path != '/':
             path += '/'
-        self.create(path + addr, encode(kw), acl, zookeeper.EPHEMERAL)
+
+        for addr in addrs:
+            self.create(path + addr, encode(kw), acl, zookeeper.EPHEMERAL)
 
     test_sleep = 0
     def _async(self, completion, meth, *args):

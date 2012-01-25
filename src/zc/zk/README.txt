@@ -636,7 +636,6 @@ optional property name, separated by whitespace.  If the name is
 ommitted, then the refering name is used.  For example, the name could
 be left off of the property link above.
 
-
 Node deletion
 =============
 
@@ -652,15 +651,13 @@ Registering a server with a blank hostname
 ==========================================
 
 It's common to use an empty string for a host name when calling bind
-to listen on all IPv4 interfaces.  If you pass an empty host name to
-``register_server``, the result of calling ``socket.getfqdn()`` will
-be registered::
-
-    >>> zk.register_server('/fooservice/providers', ('', 42))
-    addresses changed
-    ['192.168.0.42:8080', '192.168.0.42:8081', '192.168.0.42:8082',
-     'server.example.com:42']
-
+to listen on all IPv4 interfaces.  If you pass an address with an
+empty host to ``register_server`` and `netifaces
+<http://alastairs-place.net/projects/netifaces/>`_ is installed, then
+all of the IPv4 addresses [#ifaces]_ (for the given port) will be
+registered.  If netifaces isn't installed and you pass an empty host
+name, then the fully-qualified domain name, as returned by
+``socket.getfqdn()`` will be used for the host.
 
 Server-registration events
 ==========================
@@ -712,8 +709,6 @@ ZooKeeper tree::
         /192.168.0.42:8081
           pid = 7981
         /192.168.0.42:8082
-          pid = 7981
-        /server.example.com:42
           pid = 7981
 
 .. -> sh
@@ -1026,6 +1021,11 @@ Change History
 0.6.0 (2012-01-??)
 ------------------
 
+- Improved ``register_server`` in the case when an empty host is
+  passed.  If `netifaces
+  <http://alastairs-place.net/projects/netifaces/>`_ is installed,
+  ``register_server`` registers all of the IPv4 addresses [#ifaces]_.
+
 - ``delete_recursive`` now has a ``force`` argument to force deletion of
   ephemeral nodes.
 
@@ -1132,3 +1132,15 @@ Initial release
 .. test cleanup
 
    >>> zk.close()
+
+
+----------------------------------------------------------------------
+
+.. [#ifaces] It's a little more complicated.  If there are non-local
+   interfaces, then only non-local addresses are registered.  In
+   normal production, there's really no point in registering local
+   addresses, as clients on other machines can't make any sense of
+   them. If *only* local interfaces are found, then local addresses
+   are registered, under the assumption that someone is developing on
+   a disconnected computer.
+
