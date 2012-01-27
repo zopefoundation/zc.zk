@@ -848,7 +848,7 @@ to use it.
 Iterating over a tree
 =====================
 
-The ``walk`` method can be used to walk over the nodes in a tree:
+The ``walk`` method can be used to walk over the nodes in a tree::
 
     >>> for path in zk.walk():
     ...     print path
@@ -884,7 +884,7 @@ The ``walk`` method can be used to walk over the nodes in a tree:
     /fooservice/provision/node1
     /fooservice/provision/node2
 
-Modifications to nodes are reflected while traversing:
+Modifications to nodes are reflected while traversing::
 
     >>> for path in zk.walk('/fooservice'):
     ...     print path
