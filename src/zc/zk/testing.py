@@ -311,10 +311,25 @@ class ZooKeeper:
         return node
 
     def _clear_session(self, session, event=None, state=None):
+        """
+        Test: don't sweat ephemeral nodes that were already deleted
+
+        >>> zk = zc.zk.ZK('zookeeper.example.com:2181')
+        >>> zk.register_server('/fooservice/providers', 'a:b')
+
+        >>> zk2 = zc.zk.ZK('zookeeper.example.com:2181')
+        >>> zk2.delete_recursive('/fooservice', force=True)
+        >>> zk2.close()
+
+        >>> zk.close()
+        """
         with self.lock:
             self.root.clear_watchers(session.handle, event, state)
             for path in list(session.nodes):
-                self._delete(session.handle, path)
+                try:
+                    self._delete(session.handle, path)
+                except zookeeper.NoNodeException:
+                    pass # deleted in another session, perhaps
 
     def _doasync(self, completion, handle, nreturn, func, *args):
         if completion is None:

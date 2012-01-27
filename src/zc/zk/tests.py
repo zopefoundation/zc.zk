@@ -1499,6 +1499,11 @@ def test_suite():
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
             checker=checker,
             ),
+        doctest.DocTestSuite(
+            'zc.zk.testing',
+            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            checker=checker,
+            ),
         ))
     if not zc.zk.testing.testing_with_real_zookeeper():
         suite.addTest(unittest.makeSuite(Tests))

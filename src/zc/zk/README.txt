@@ -1104,6 +1104,13 @@ more, use the help function::
 Change History
 ==============
 
+0.6.1 (2012-01-27)
+------------------
+
+- Fixed testing: There were spurious errors when closing a testing
+  ZooKeeper connection in which ephemeral nodes were created and when
+  they were deleted by another session.
+
 0.6.0 (2012-01-25)
 ------------------
 
