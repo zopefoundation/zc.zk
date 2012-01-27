@@ -845,6 +845,57 @@ method, with the exception that it provides less flexibility for
 specifing access control lists. Use the ``--help`` option to see how
 to use it.
 
+Iterating over a tree
+=====================
+
+The ``walk`` method can be used to walk over the nodes in a tree:
+
+    >>> for path in zk.walk():
+    ...     print path
+    /
+    /cms
+    /cms/databases
+    /cms/providers
+    /cms/providers/1.2.3.4:5
+    /databases
+    /databases/cms
+    /fooservice
+    /fooservice/providers
+    /fooservice/providers/192.168.0.42:8080
+    /fooservice/providers/192.168.0.42:8081
+    /fooservice/providers/192.168.0.42:8082
+    /fooservice/provision
+    /fooservice/provision/node1
+    /fooservice/provision/node2
+    /lb
+    /lb/pools
+    /lb/pools/cms
+    /zookeeper
+    /zookeeper/quota
+
+    >>> for path in zk.walk('/fooservice'):
+    ...     print path
+    /fooservice
+    /fooservice/providers
+    /fooservice/providers/192.168.0.42:8080
+    /fooservice/providers/192.168.0.42:8081
+    /fooservice/providers/192.168.0.42:8082
+    /fooservice/provision
+    /fooservice/provision/node1
+    /fooservice/provision/node2
+
+Modifications to nodes are reflected while traversing:
+
+    >>> for path in zk.walk('/fooservice'):
+    ...     print path
+    ...     if 'provision' in zk.get_children(path):
+    ...         zk.delete_recursive(path+'/provision')
+    /fooservice
+    /fooservice/providers
+    /fooservice/providers/192.168.0.42:8080
+    /fooservice/providers/192.168.0.42:8081
+    /fooservice/providers/192.168.0.42:8082
+
 
 Graph analysis
 ==============
@@ -969,6 +1020,9 @@ zc.zk.ZooKeeper
        Boolean, defaulting to false, indicating whether to do a dry
        run of the import, without applying any changes.
 
+``is_ephemeral(path)``
+   Return ``True`` if the node at ``path`` is ephemeral,``False`` otherwise.
+
 ``ln(source, destination)``
    Create a symbolic link at the destination path pointing to the
    source path.
@@ -1005,6 +1059,9 @@ zc.zk.ZooKeeper
 
 ``resolve(path)``
    Find the real path for the given path.
+
+``walk(path)``
+   Iterate over the nodes of a tree rooted at path.
 
 In addition, ``ZooKeeper`` instances provide access to the following
 ZooKeeper functions as methods: ``acreate``, ``add_auth``,
@@ -1104,12 +1161,17 @@ more, use the help function::
 Change History
 ==============
 
-0.6.1 (2012-01-27)
+0.7.0 (2012-01-27)
 ------------------
+
+- Added ``walk`` and ``is_ephemeral`` methods.
 
 - Fixed testing: There were spurious errors when closing a testing
   ZooKeeper connection in which ephemeral nodes were created and when
   they were deleted by another session.
+
+- Fixed testing: When running with a real ZooKeeper server, the
+  (virtual) root didn't have a ``zookeeper`` node.
 
 0.6.0 (2012-01-25)
 ------------------

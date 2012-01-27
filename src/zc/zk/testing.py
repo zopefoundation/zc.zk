@@ -59,7 +59,8 @@ def wait_until(func=None, timeout=9):
         if time.time() > deadline:
             raise AssertionError('timeout')
 
-def setup_tree(tree, connection_string, root='/test-root'):
+def setup_tree(tree, connection_string, root='/test-root',
+               zookeeper_node=False):
     zk = zc.zk.ZooKeeper(connection_string)
     if zk.exists(root):
         zk.delete_recursive(root)
@@ -71,6 +72,13 @@ def setup_tree(tree, connection_string, root='/test-root'):
       threads = 1
       favorite_color = 'red'
     """, root)
+
+    if zookeeper_node:
+        zk.import_tree("""
+        /zookeeper
+          /quota
+        """, root)
+
     zk.close()
 
 def testing_with_real_zookeeper():
@@ -126,7 +134,7 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     if real_zk:
         test_root = '/zc.zk.testing.test-root%s' % random.randint(0, sys.maxint)
         globs['/zc.zk.testing.test-root'] = test_root
-        setup_tree(tree, real_zk, test_root)
+        setup_tree(tree, real_zk, test_root, True)
 
         orig_init = zookeeper.init
         cm = mock.patch('zookeeper.init')

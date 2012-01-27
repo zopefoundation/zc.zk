@@ -461,7 +461,7 @@ class ZooKeeper(Resolving):
             print "%s not deleted due to ephemeral descendent." % path
             return ephemeral_child
 
-        ephemeral = self.get(path)[1]['ephemeralOwner'] and not force
+        ephemeral = self.is_ephemeral(path) and not force
         if dry_run:
             if ephemeral:
                 print "wouldn't delete %s because it's ephemeral." % path
@@ -474,6 +474,9 @@ class ZooKeeper(Resolving):
                 logger.info('deleting %s', path)
                 self.delete(path)
         return ephemeral
+
+    def is_ephemeral(self, path):
+        return bool(self.get(path)[1]['ephemeralOwner'])
 
     def export_tree(self, path='/', ephemeral=False, name=None):
         output = []
@@ -521,7 +524,6 @@ class ZooKeeper(Resolving):
     def _set(self, path, data):
         return self.set(path, data)
 
-
     def ln(self, target, source):
         base, name = source.rsplit('/', 1)
         if target[-1] == '/':
@@ -539,6 +541,15 @@ class ZooKeeper(Resolving):
         if self.handle is None:
             return zookeeper.CONNECTING_STATE
         return zookeeper.state(self.handle)
+
+    def walk(self, path='/'):
+        yield path
+        for name in sorted(self.get_children(path)):
+            if path != '/':
+                name = '/'+name
+            for p in self.walk(path+name):
+                yield p
+
 
 def _make_method(name):
     return (lambda self, *a, **kw:

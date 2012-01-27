@@ -1450,6 +1450,18 @@ def delete_recursive_force():
     >>> zk.close()
     """
 
+def is_ephemeral():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice/providers', 'a:b')
+    >>> zk.is_ephemeral('/fooservice')
+    False
+    >>> zk.is_ephemeral('/fooservice/providers')
+    False
+    >>> zk.is_ephemeral('/fooservice/providers/a:b')
+    True
+    >>> zk.close()
+    """
 
 # XXX
 # deleting linked node
