@@ -949,6 +949,10 @@ zc.zk.ZooKeeper
    them up when they are no-longer used.  If you only want to get the
    list of children once, use ``get_children``.
 
+``create_recursive(path, data, acl)``
+   Create a non-ephemeral node at the given path, creating parent
+   nodes if necessary.
+
 ``close()``
     Close the ZooKeeper session.
 
@@ -1164,7 +1168,10 @@ Change History
 0.7.0 (2012-01-27)
 ------------------
 
-- Added ``walk`` and ``is_ephemeral`` methods.
+- Added ``walk``, ``is_ephemeral``, and ``create_recursive`` methods.
+
+- Fixed testing: Added access-control fidelity to the testing
+  ZooKeeper stub.
 
 - Fixed testing: There were spurious errors when closing a testing
   ZooKeeper connection in which ephemeral nodes were created and when

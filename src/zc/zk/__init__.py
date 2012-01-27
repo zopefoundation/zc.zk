@@ -380,6 +380,15 @@ class ZooKeeper(Resolving):
     def children(self, path):
         return Children(self, path)
 
+    def create_recursive(self, path, data, acl):
+        if self.exists(path):
+            return
+        base, name = path.rsplit('/', 1)
+        if base:
+            self.create_recursive(base, data, acl)
+        if not self.exists(path):
+            self.create(path, data, acl)
+
     def get_properties(self, path):
         return decode(self.get(path)[0])
 

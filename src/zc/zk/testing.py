@@ -335,7 +335,7 @@ class ZooKeeper:
             self.root.clear_watchers(session.handle, event, state)
             for path in list(session.nodes):
                 try:
-                    self._delete(session.handle, path)
+                    self._delete(session.handle, path, clear=True)
                 except zookeeper.NoNodeException:
                     pass # deleted in another session, perhaps
 
@@ -386,6 +386,9 @@ class ZooKeeper:
             if base.endswith('/'):
                 raise zookeeper.BadArgumentsException('bad arguments')
             node = self._traverse(base)
+            for p in node.acl:
+                if not (p['perms'] & zookeeper.PERM_CREATE):
+                    raise zookeeper.NoAuthException('not authenticated')
             if name in node.children:
                 raise zookeeper.NodeExistsException()
             node.children[name] = newnode = Node(data)
@@ -400,7 +403,7 @@ class ZooKeeper:
         return self._doasync(completion, handle, 1,
                             self.create, handle, path, data, acl, flags)
 
-    def _delete(self, handle, path, version=-1):
+    def _delete(self, handle, path, version=-1, clear=False):
         node = self._traverse(path)
         if version != -1 and node.version != version:
             raise zookeeper.BadVersionException('bad version')
@@ -408,6 +411,10 @@ class ZooKeeper:
             raise zookeeper.NotEmptyException('not empty')
         base, name = path.rsplit('/', 1)
         bnode = self._traverse(base)
+        if not clear:
+            for p in bnode.acl:
+                if not (p['perms'] & zookeeper.PERM_DELETE):
+                    raise zookeeper.NoAuthException('not authenticated', path)
         del bnode.children[name]
         node.deleted(handle, zookeeper.CONNECTED_STATE, path)
         bnode.children_changed(handle, zookeeper.CONNECTED_STATE, base)
@@ -445,6 +452,9 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
+            for p in node.acl:
+                if not (p['perms'] & zookeeper.PERM_READ):
+                    raise zookeeper.NoAuthException('not authenticated')
             if watch:
                 node.child_watchers += ((handle, watch), )
             return list(node.children)
@@ -457,6 +467,9 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
+            for p in node.acl:
+                if not (p['perms'] & zookeeper.PERM_READ):
+                    raise zookeeper.NoAuthException('not authenticated')
             if watch:
                 node.watchers += ((handle, watch), )
             return node.data, node.meta()
@@ -473,6 +486,9 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
+            for p in node.acl:
+                if not (p['perms'] & zookeeper.PERM_WRITE):
+                    raise zookeeper.NoAuthException('not authenticated')
             if version != -1 and node.version != version:
                 raise zookeeper.BadVersionException('bad version')
             node.data = data
@@ -500,6 +516,9 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
+            for p in node.acl:
+                if not (p['perms'] & zookeeper.PERM_ADMIN):
+                    raise zookeeper.NoAuthException('not authenticated', path)
             if aversion != node.aversion:
                 raise zookeeper.BadVersionException("bad version")
             node.aversion += 1

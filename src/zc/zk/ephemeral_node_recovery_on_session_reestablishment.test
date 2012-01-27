@@ -27,7 +27,10 @@ If the node is deleted, we don't recreate it:
 
 First, some non-standard data and acl:
 
-    >>> acl = [zc.zk.world_permission(3)]
+    >>> acl = [
+    ...     zc.zk.world_permission(
+    ...      zookeeper.PERM_READ | zookeeper.PERM_WRITE | zookeeper.PERM_ADMIN
+    ...     )]
     >>> zk.register_server('/fooservice/providers', 'test', acl, a=1)
     >>> zk.print_tree('/fooservice/providers')
     /providers
@@ -68,7 +71,9 @@ Let's use the low-level creation api:
 We track changes:
 
     >>> _ = zk.set('/fooservice/providers/test', 'y')
-    >>> acl2 = [zc.zk.world_permission(4)]
+    >>> acl2 = [zc.zk.world_permission(zookeeper.PERM_CREATE |
+    ...                                zookeeper.PERM_ADMIN |
+    ...                                zookeeper.PERM_READ)]
     >>> _ = zk.set_acl('/fooservice/providers/test', 0, acl2)
     >>> ZooKeeper.sessions[zk.handle].disconnect()
     >>> ZooKeeper.sessions[zk.handle].expire()
@@ -101,7 +106,8 @@ Let's do it all asyncronously :)
     >>> zk.aset('/fooservice/providers/test', 'y', -1, check_async(0))
     0
     >>> event.wait(1); assert_(event.is_set())
-    >>> acl2 = [zc.zk.world_permission(4)]
+    >>> acl2 = [zc.zk.world_permission(zookeeper.PERM_CREATE |
+    ...                                zookeeper.PERM_READ)]
     >>> _ = zk.aset_acl('/fooservice/providers/test', 0, acl2, check_async(0))
     >>> event.wait(1); assert_(event.is_set())
     >>> ZooKeeper.sessions[zk.handle].disconnect()

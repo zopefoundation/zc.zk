@@ -1463,8 +1463,43 @@ def is_ephemeral():
     >>> zk.close()
     """
 
-# XXX
-# deleting linked node
+def create_recursive():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.create_recursive('/fooservice/a/b/c', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> acl = [dict(perms=zookeeper.PERM_CREATE |
+    ...        zookeeper.PERM_READ |
+    ...        zookeeper.PERM_DELETE,
+    ...        scheme='world', id='anyone')]
+    >>> zk.create_recursive('/a/b/c', '{"z": 1}', acl)
+
+    >>> zk.print_tree()
+    /a
+      z = 1
+      /b
+        z = 1
+        /c
+          z = 1
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /a
+        /b
+          /c
+      /providers
+
+    >>> for path in zk.walk('/fooservice/a'):
+    ...     if zk.get_acl(path)[1] != zc.zk.OPEN_ACL_UNSAFE:
+    ...         print 'oops'
+
+    >>> for path in zk.walk('/a'):
+    ...     if zk.get_acl(path)[1] != acl:
+    ...         print 'oops'
+
+    >>> zk.close()
+    """
+
 
 event = threading.Event()
 def check_async(show=True, expected_status=0):
