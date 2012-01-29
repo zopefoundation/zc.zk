@@ -12,6 +12,8 @@
 #
 ##############################################################################
 from pprint import pprint
+from zope.testing import setupstack
+from zope.testing.wait import wait
 import doctest
 import json
 import logging
@@ -45,10 +47,9 @@ class LoggingTests(unittest.TestCase):
         except:
             pass
 
-        zc.zk.testing.wait_until(
-            lambda : [r for r in handler.records
-                      if 'environment' in r.getMessage()]
-            )
+        wait(lambda : [r for r in handler.records
+                       if 'environment' in r.getMessage()]
+             )
         handler.clear()
 
         # Test that the filter for the "Exceeded deadline by" noise works.
@@ -56,12 +57,11 @@ class LoggingTests(unittest.TestCase):
         os.write(zc.zk._logging_pipe[1],
                  '2012-01-06 16:45:44,572:43673(0x1004f6000):ZOO_WARN@'
                  'zookeeper_interest@1461: Exceeded deadline by 27747ms\n')
-        zc.zk.testing.wait_until(
-            lambda : [r for r in handler.records
-                      if ('Exceeded deadline by' in r.getMessage()
-                          and r.levelno == logging.DEBUG)
-                      ]
-            )
+        wait(lambda : [r for r in handler.records
+                       if ('Exceeded deadline by' in r.getMessage()
+                           and r.levelno == logging.DEBUG)
+                       ]
+             )
 
         self.assert_(not [r for r in handler.records
                           if ('Exceeded deadline by' in r.getMessage()
@@ -97,7 +97,7 @@ class Tests(unittest.TestCase):
             zk = zc.zk.ZooKeeper()
             return zk
 
-        zc.zk.testing.wait_until(lambda : init.call_args)
+        wait(lambda : init.call_args)
         (zkaddr, self.__session_watcher), kw = init.call_args
         self.assertEqual((zkaddr, kw), ('127.0.0.1:2181', {}))
         self.__session_watcher(
@@ -1521,10 +1521,9 @@ def setUpEphemeral_node_recovery_on_session_reestablishment(test):
 
 def setUpREADME(test):
     zc.zk.testing.setUp(test)
-    cm = mock.patch('socket.getfqdn')
-    m = cm.__enter__()
-    m.side_effect = lambda : 'server.example.com'
-    test.globs['zc.zk.testing'].append(cm.__exit__)
+    @side_effect(setupstack.context_manager(test, mock.patch('socket.getfqdn')))
+    def getfqdn():
+        return 'socket.getfqdn'
 
 checker = zope.testing.renormalizing.RENormalizing([
     (re.compile('pid = \d+'), 'pid = 9999'),

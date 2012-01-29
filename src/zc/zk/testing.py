@@ -19,6 +19,7 @@ It's especially useful for testing packages that build on zc.zk.
 It provides setUp and tearDown functions that can be used with
 doctests or with regular ```unittest`` tests.
 """
+from zope.testing import setupstack
 import json
 import mock
 import os
@@ -34,6 +35,9 @@ import zookeeper
 
 __all__ = ['assert_', 'setUp', 'tearDown', 'testing_with_real_zookeeper']
 
+def side_effect(mock):
+    return lambda func: setattr(mock, 'side_effect', func)
+
 def assert_(cond, mess='', error=True):
     """A simple assertion function.
 
@@ -47,10 +51,10 @@ def assert_(cond, mess='', error=True):
             print 'assertion failed: ', mess
 
 def wait_until(func=None, timeout=9):
-    """Wait until a function returns true.
+    import warnings
+    warnings.warn("wait_until is deprecated. Use zope.testing.wait.wait",
+                  DeprecationWarning, 2)
 
-    Raise an AssertionError on timeout.
-    """
     if func():
         return
     deadline = time.time()+timeout
@@ -127,8 +131,7 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     A regular unit test can check the ZooKeeper test attribute.
     """
 
-    globs = getattr(test, 'globs', test.__dict__)
-    teardowns = []
+    globs = setupstack.globs(test)
     faux_zookeeper = None
     real_zk = testing_with_real_zookeeper()
     if real_zk:
@@ -137,17 +140,17 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
         setup_tree(tree, real_zk, test_root, True)
 
         orig_init = zookeeper.init
-        cm = mock.patch('zookeeper.init')
-        m = cm.__enter__()
+
+        @side_effect(
+            setupstack.context_manager(test, mock.patch('zookeeper.init')))
         def init(addr, watch=None, session_timeout=1000):
             if addr != connection_string:
                 return orig_init(addr, watch, session_timeout)
             else:
                 return orig_init(real_zk+test_root, watch, session_timeout)
-        m.side_effect = init
-        teardowns.append(cm.__exit__)
 
-        teardowns.append(lambda : setattr(zc.zk.ZooKeeper, 'test_sleep', 0))
+        setupstack.register(
+            test, lambda : setattr(zc.zk.ZooKeeper, 'test_sleep', 0))
         zc.zk.ZooKeeper.test_sleep = .01
         time.sleep(float(os.environ.get('TEST_ZOOKEEPER_SLEEP', 0)))
 
@@ -172,18 +175,15 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
         for name in ZooKeeper.__dict__:
             if name[0] == '_':
                 continue
-            cm = mock.patch('zookeeper.'+name)
-            m = cm.__enter__()
+            m = setupstack.context_manager(test, mock.patch('zookeeper.'+name))
             m.side_effect = getattr(faux_zookeeper, name)
-            teardowns.append(cm.__exit__)
 
         if tree:
             zk = zc.zk.ZooKeeper(connection_string)
             zk.import_tree(tree)
             zk.close()
 
-    globs['wait_until'] = wait_until
-    globs['zc.zk.testing'] = teardowns
+    globs['wait_until'] = wait_until # BBB
     globs['ZooKeeper'] = faux_zookeeper
     globs.setdefault('assert_', assert_)
 
@@ -192,13 +192,11 @@ def tearDown(test):
 
     The single argument is the test case passed to setUp.
     """
-    globs = getattr(test, 'globs', test.__dict__)
-    for cm in globs['zc.zk.testing']:
-        cm()
+    setupstack.tearDown(test)
     real_zk = testing_with_real_zookeeper()
     if real_zk:
         zk = zc.zk.ZooKeeper(real_zk)
-        root = globs['/zc.zk.testing.test-root']
+        root = setupstack.globs(test)['/zc.zk.testing.test-root']
         if zk.exists(root):
             zk.delete_recursive(root)
         zk.close()

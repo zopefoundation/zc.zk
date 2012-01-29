@@ -19,6 +19,7 @@
 # enough to control).
 
 from pprint import pprint
+from zope.testing.wait import wait
 import zc.zk
 import zookeeper
 import zope.testing.loggingsupport
@@ -42,10 +43,10 @@ def wait_for_zookeeper():
 
     We'll wait a while while it tries in vane to connect:
 
-    >>> wait_until((lambda : zk is not None), 4)
+    >>> wait((lambda : zk is not None), 4)
     Traceback (most recent call last):
     ...
-    AssertionError: timeout
+    TimeOutWaitingFor: <lambda>
 
     >>> print handler # doctest: +ELLIPSIS
     zc.zk CRITICAL
@@ -58,7 +59,7 @@ def wait_for_zookeeper():
     Now, we'll make the connection possible:
 
     >>> ZooKeeper._allow_connection('Invalid')
-    >>> wait_until(lambda : zk is not None)
+    >>> wait(lambda : zk is not None)
 
     >>> zk.state == zookeeper.CONNECTED_STATE
     True
