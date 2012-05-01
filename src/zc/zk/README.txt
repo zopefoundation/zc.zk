@@ -922,7 +922,7 @@ Reference
 zc.zk.ZooKeeper
 ---------------
 
-``zc.zk.ZooKeeper([connection_string[, session_timeout[, timeout[, wait]]]])``
+``zc.zk.ZooKeeper([connection_string[, session_timeout[, wait]]])``
     Return a new instance given a ZooKeeper connection string.
 
     The connection string defaults to '127.0.0.1:2181'.
