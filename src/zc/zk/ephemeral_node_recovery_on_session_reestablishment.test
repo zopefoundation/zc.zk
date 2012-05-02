@@ -5,21 +5,40 @@ First, a basic test:
 
     >>> import zc.zk, zookeeper
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+
+Create some ephemeral nodes, which should be reestablished on session
+reestablishment:
+
     >>> zk.register_server('/fooservice/providers', 'test')
+    >>> zk.create('/fooservice/providers/test2', '', zc.zk.OPEN_ACL_UNSAFE,
+    ...           zookeeper.EPHEMERAL)
+    '/fooservice/providers/test2'
+
+Create an ephemeral sequence node, which should *not* be restored:
+
+    >>> zk.create('/fooservice/providers/test-', '', zc.zk.OPEN_ACL_UNSAFE,
+    ...           zookeeper.EPHEMERAL | zookeeper.SEQUENCE)
+    '/fooservice/providers/test-0000000001'
+
+So, we have some ephemeral nodes before loosing the session:
+
     >>> zk.get_children('/fooservice/providers')
-    ['test']
+    ['test', 'test2', 'test-0000000001']
 
     >>> ZooKeeper.sessions[zk.handle].disconnect()
     >>> ZooKeeper.sessions[zk.handle].expire()
 
+Now, after creating the new session, we have the non-sequence ephemeral nodes:
+
     >>> zk.get_children('/fooservice/providers')
-    ['test']
+    ['test', 'test2']
 
 Now, some variations.
 
 If the node is deleted, we don't recreate it:
 
     >>> _ = zk.delete('/fooservice/providers/test')
+    >>> _ = zk.delete('/fooservice/providers/test2')
     >>> ZooKeeper.sessions[zk.handle].disconnect()
     >>> ZooKeeper.sessions[zk.handle].expire()
     >>> zk.get_children('/fooservice/providers')

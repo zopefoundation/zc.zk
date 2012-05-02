@@ -268,7 +268,7 @@ class ZooKeeper(Resolving):
     acreate = create
 
     def _post_create(self, path, data, acl, flags):
-        if flags & zookeeper.EPHEMERAL:
+        if (flags & zookeeper.EPHEMERAL) and not (flags & zookeeper.SEQUENCE):
             self.ephemeral[path] = dict(data=data, acl=acl, flags=flags)
 
     def delete(self, path, version=-1, completion=None):

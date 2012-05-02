@@ -275,6 +275,7 @@ class ZooKeeper:
         self.sessions = {}
         self.lock = threading.RLock()
         self.failed = {}
+        self.sequence_number = 0
 
     def init(self, addr, watch=None, session_timeout=4000):
         with self.lock:
@@ -381,6 +382,10 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             base, name = path.rsplit('/', 1)
+            if flags & zookeeper.SEQUENCE:
+                self.sequence_number += 1
+                name += "%.10d" % self.sequence_number
+                path = base + '/' + name
             if base.endswith('/'):
                 raise zookeeper.BadArgumentsException('bad arguments')
             node = self._traverse(base)
