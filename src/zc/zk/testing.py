@@ -20,6 +20,7 @@ It provides setUp and tearDown functions that can be used with
 doctests or with regular ```unittest`` tests.
 """
 from zope.testing import setupstack
+import collections
 import json
 import mock
 import os
@@ -276,6 +277,7 @@ class ZooKeeper:
         self.lock = threading.RLock()
         self.failed = {}
         self.sequence_number = 0
+        self.exists_watchers = collections.defaultdict(tuple)
 
     def init(self, addr, watch=None, session_timeout=4000):
         with self.lock:
@@ -398,6 +400,10 @@ class ZooKeeper:
             newnode.acl = acl
             newnode.flags = flags
             node.children_changed(handle, zookeeper.CONNECTED_STATE, base)
+
+            for h, w in self.exists_watchers.pop(path, ()):
+                w(h, zookeeper.CREATED_EVENT, zookeeper.CONNECTED_STATE, path)
+
             if flags & zookeeper.EPHEMERAL:
                 self.sessions[handle].add(path)
             return path
@@ -435,17 +441,54 @@ class ZooKeeper:
                              self.delete, handle, path, version)
 
     def exists(self, handle, path, watch=None):
-        if watch is not None:
-            raise TypeError('exists watch not supported')
+        """Test whether a node exists:
+
+        >>> zk = zc.zk.ZK('zookeeper.example.com:2181')
+        >>> zk.exists('/test_exists')
+
+        We can set watches:
+
+        >>> def watch(*args):
+        ...     print args
+
+        >>> zk.exists('/test_exists', watch)
+        >>> _ = zk.create('/test_exists', '', zc.zk.OPEN_ACL_UNSAFE)
+        (0, 1, 3, '/test_exists')
+
+        When a node exists, exists retirnes it's meta data, which is
+        the same as the second result from get:
+
+        >>> zk.exists('/test_exists') == zk.get('/test_exists')[1]
+        True
+
+        We can set watches on nodes that exist, too:
+
+        >>> zk.exists('/test_exists', watch) == zk.get('/test_exists')[1]
+        True
+
+        >>> _ = zk.delete('/test_exists')
+        (0, 2, 3, '/test_exists')
+
+        Watches are one-time:
+
+        >>> _ = zk.create('/test_exists', '', zc.zk.OPEN_ACL_UNSAFE)
+        >>> _ = zk.delete('/test_exists')
+
+        >>> zk.close()
+        """
         if badpath(path):
             raise zookeeper.BadArgumentsException('bad argument')
         with self.lock:
             self._check_handle(handle)
             try:
-                self._traverse(path)
-                return True
+                node = self._traverse(path)
+                if watch:
+                    node.exists_watchers += ((handle, watch), )
+                return node.meta()
             except zookeeper.NoNodeException:
-                return False
+                if watch:
+                    self.exists_watchers[path] += ((handle, watch), )
+                return None
 
     def aexists(self, handle, path, watch=None, completion=None):
         return self._doasync(completion, handle, 1,
@@ -534,7 +577,7 @@ class ZooKeeper:
                              self.set_acl, handle, path, aversion, acl)
 
 class Node:
-    watchers = child_watchers = ()
+    watchers = child_watchers = exists_watchers = ()
     flags = 0
     version = aversion = cversion = 0
     acl = zc.zk.OPEN_ACL_UNSAFE
@@ -576,6 +619,10 @@ class Node:
         self.watchers = ()
         for h, w in watchers:
             w(h, zookeeper.DELETED_EVENT, state, path)
+        watchers = self.exists_watchers
+        self.exists_watchers = ()
+        for h, w in watchers:
+            w(h, zookeeper.DELETED_EVENT, state, path)
         watchers = self.child_watchers
         self.watchers = ()
         for h, w in watchers:
@@ -589,6 +636,9 @@ class Node:
             for (h, w) in self.child_watchers:
                 if h == handle:
                     w(h, event, state, path)
+            for (h, w) in self.exists_watchers:
+                if h == handle:
+                    w(h, event, state, path)
 
         self.watchers = tuple(
             (h, w) for (h, w) in self.watchers
@@ -596,6 +646,10 @@ class Node:
             )
         self.child_watchers = tuple(
             (h, w) for (h, w) in self.child_watchers
+            if h != handle
+            )
+        self.exists_watchers = tuple(
+            (h, w) for (h, w) in self.exists_watchers
             if h != handle
             )
         for name, child in self.children.items():

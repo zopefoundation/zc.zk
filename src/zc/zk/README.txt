@@ -1174,6 +1174,9 @@ Change History
 - Fixed: The testing ZooKeeper mock didn't implement sequence nodes
   correctly.
 
+- Fixed: The testing ZooKeeper mock didn't implement ``exists``
+  correctly.
+
 0.7.0 (2012-01-27)
 ------------------
 
