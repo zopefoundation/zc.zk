@@ -69,7 +69,7 @@ def wait_for_zookeeper():
     >>> zk.close()
     """
 
-def settion_timeout_with_child_and_data_watchers():
+def session_timeout_with_child_and_data_watchers():
     """
 
 Set up a session with some watchers:
