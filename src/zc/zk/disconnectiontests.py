@@ -125,11 +125,57 @@ Now, if we make changes, they'll be properly reflected:
     ['providers', 'x']
 
     >>> print handler
-    zc.zk WARNING
-      Node watcher event -1 with non-connected state, -112
-    zc.zk WARNING
-      Node watcher event -1 with non-connected state, -112
     zc.zk INFO
       connected 0
 
+    """
+
+def session_events_are_ignored_by_child_and_data_watch_support():
+    """Session events are send to child, data and exists watcher.
+
+    This should have no impact on the watch support.
+
+    Nothing should get logged. No errors, no warnings.
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> handler = zope.testing.loggingsupport.InstalledHandler('zc.zk')
+    >>> @zk.properties('/fooservice')
+    ... def p(data):
+    ...     print 'property changed'
+    property changed
+
+    >>> @zk.children('/fooservice')
+    ... def c(data):
+    ...     print 'children changed'
+    children changed
+
+    >>> node = ZooKeeper._traverse('/fooservice')
+    >>> len(node.watchers), len(node.child_watchers)
+    (1, 1)
+
+    >>> for state in (zookeeper.CONNECTING_STATE,
+    ...               zookeeper.CONNECTED_STATE,
+    ...               zookeeper.EXPIRED_SESSION_STATE,
+    ...     ):
+    ...     for h, w in (node.watchers + node.child_watchers):
+    ...         w(h, zookeeper.SESSION_EVENT, state, '')
+
+    >>> print handler,
+    >>> handler.uninstall()
+
+    >>> len(node.watchers), len(node.child_watchers)
+    (1, 1)
+
+    >>> zk2 = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> p2 = zk2.properties('/fooservice')
+    >>> p2.update(z=1)
+    property changed
+    >>> _ = zk2.create('/fooservice/xxx', '', zc.zk.OPEN_ACL_UNSAFE)
+    children changed
+
+    >>> len(node.watchers), len(node.child_watchers)
+    (2, 1)
+
+    >>> zk.close()
+    >>> zk2.close()
     """

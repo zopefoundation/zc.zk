@@ -332,6 +332,9 @@ class ZooKeeper(Resolving):
 
         def handler(h, t, state, p, reraise=False):
 
+            if t == zookeeper.SESSION_EVENT:
+                return
+
             if state != zookeeper.CONNECTED_STATE:
                 # This can happen if we get disconnected or a session expires.
                 # When we reconnect, we should restablish the watchers.

@@ -1177,6 +1177,10 @@ Change History
 - Fixed: The testing ZooKeeper mock didn't implement ``exists``
   correctly.
 
+- Fixed: Session events were misshandled by the high-level children
+  and properties watch-support code in a way that cause scary both
+  otherwise harmless log message.
+
 0.7.0 (2012-01-27)
 ------------------
 
