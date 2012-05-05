@@ -222,14 +222,14 @@ class Session:
         self.newstate(zookeeper.CONNECTING_STATE)
 
     def expire(self):
-        self.zk._clear_session(
-            self, zookeeper.SESSION_EVENT, zookeeper.EXPIRED_SESSION_STATE)
+        self.zk._clear_session(self)
         self.newstate(zookeeper.EXPIRED_SESSION_STATE)
 
     def newstate(self, state):
         self.state = state
         if self.watch is not None:
             self.watch(self.handle, zookeeper.SESSION_EVENT, state, '')
+        self.zk._session_event(self.handle, state)
 
     def check(self):
         if self.state == zookeeper.CONNECTING_STATE:
@@ -319,7 +319,16 @@ class ZooKeeper:
 
         return node
 
-    def _clear_session(self, session, event=None, state=None):
+    def _session_event(self, handle, state):
+        with self.lock:
+            for path, watchers in self.exists_watchers.items():
+                for h, w in watchers:
+                    if h == handle:
+                        w(h, zookeeper.SESSION_EVENT, state, '')
+            self.root.session_event(handle, state)
+
+
+    def _clear_session(self, session):
         """
         Test: don't sweat ephemeral nodes that were already deleted
 
@@ -332,8 +341,14 @@ class ZooKeeper:
 
         >>> zk.close()
         """
+        handle = session.handle
         with self.lock:
-            self.root.clear_watchers(session.handle, event, state)
+            self.root.clear_watchers(handle)
+            for path in self.exists_watchers:
+                self.exists_watchers[path] = tuple(
+                    (h, w) for (h, w) in self.exists_watchers[path]
+                    if h != handle
+                    )
             for path in list(session.nodes):
                 try:
                     self._delete(session.handle, path, clear=True)
@@ -374,7 +389,7 @@ class ZooKeeper:
     def close(self, handle):
         with self.lock:
             self._clear_session(self._check_handle(handle, False))
-            del self.sessions[handle]
+            self.sessions.pop(handle).disconnect()
 
     def state(self, handle):
         with self.lock:
@@ -544,6 +559,10 @@ class ZooKeeper:
             else:
                 return 0
 
+    def set_watcher(self, handle, watch):
+        with self.lock:
+            self._check_handle(handle).watch = watch
+
     def aset(self, handle, path, data, version=-1, completion=None):
         return self._doasync(completion, handle, 1,
                              self.set, handle, path, data, version, True)
@@ -628,18 +647,20 @@ class Node:
         for h, w in watchers:
             w(h, zookeeper.DELETED_EVENT, state, path)
 
-    def clear_watchers(self, handle, event, state, path='/'):
-        if state is not None:
-            for (h, w) in self.watchers:
-                if h == handle:
-                    w(h, event, state, path)
-            for (h, w) in self.child_watchers:
-                if h == handle:
-                    w(h, event, state, path)
-            for (h, w) in self.exists_watchers:
-                if h == handle:
-                    w(h, event, state, path)
+    def session_event(self, handle, state):
+        for (h, w) in self.watchers:
+            if h == handle:
+                w(h, zookeeper.SESSION_EVENT, state, '')
+        for (h, w) in self.child_watchers:
+            if h == handle:
+                w(h, zookeeper.SESSION_EVENT, state, '')
+        for (h, w) in self.exists_watchers:
+            if h == handle:
+                w(h, zookeeper.SESSION_EVENT, state, '')
+        for child in self.children.values():
+            child.session_event(handle, state)
 
+    def clear_watchers(self, handle):
         self.watchers = tuple(
             (h, w) for (h, w) in self.watchers
             if h != handle
@@ -653,4 +674,4 @@ class Node:
             if h != handle
             )
         for name, child in self.children.items():
-            child.clear_watchers(handle, event, state, path + '/' + name)
+            child.clear_watchers(handle)
