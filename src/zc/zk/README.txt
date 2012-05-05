@@ -1165,7 +1165,7 @@ more, use the help function::
 Change History
 ==============
 
-0.7.1 (2012-05-??)
+0.8.0 (2012-05-??)
 ------------------
 
 - Fixed: ephemeral *sequence* nodes were restablished on session
@@ -1180,6 +1180,8 @@ Change History
 - Fixed: Session events were misshandled by the high-level children
   and properties watch-support code in a way that cause scary both
   otherwise harmless log message.
+
+- Increased the initial time to wait for ZooKeeper connections.
 
 0.7.0 (2012-01-27)
 ------------------

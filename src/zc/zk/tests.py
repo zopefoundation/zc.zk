@@ -1525,6 +1525,13 @@ def setUpREADME(test):
     def getfqdn():
         return 'socket.getfqdn'
 
+def disconnectiontestsSetup(test):
+    zc.zk.testing.setUp(test)
+    setupstack.register(
+        test, setattr, zc.zk.ZooKeeper, 'initial_connection_wait',
+        zc.zk.ZooKeeper.initial_connection_wait)
+    zc.zk.ZooKeeper.initial_connection_wait = .1
+
 checker = zope.testing.renormalizing.RENormalizing([
     (re.compile('pid = \d+'), 'pid = 9999'),
     (re.compile("{'pid': \d+}"), 'pid = 9999'),
@@ -1562,7 +1569,7 @@ def test_suite():
             ))
         suite.addTest(doctest.DocTestSuite(
             'zc.zk.disconnectiontests',
-            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            setUp=disconnectiontestsSetup, tearDown=zc.zk.testing.tearDown,
             checker=checker,
             ))
 

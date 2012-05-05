@@ -154,6 +154,8 @@ class Resolving:
 
 class ZooKeeper(Resolving):
 
+    initial_connection_wait = 9.0
+
     def __init__(self, connection_string="127.0.0.1:2181", session_timeout=None,
                  wait=False):
         self.watches = WatchManager()
@@ -195,7 +197,7 @@ class ZooKeeper(Resolving):
             init = lambda : zookeeper.init(connection_string, watch_session)
 
         handle = init()
-        connected.wait(1)
+        connected.wait(self.initial_connection_wait)
         if not connected.is_set():
             if wait:
                 while not connected.is_set():

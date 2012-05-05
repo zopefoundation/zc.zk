@@ -26,10 +26,10 @@ import zope.testing.loggingsupport
 
 def wait_for_zookeeper():
     """
-    Normally, zc.zk.ZooKeeper raises an exception if it can't connect to
-    ZooKeeper in a second.  Some applications might want to wait, so
-    zc.zk.ZooKeeper accepts a wait parameter that causes it to wait for a
-    connection.
+    Normally, zc.zk.ZooKeeper raises an exception if it can't connect
+    to ZooKeeper in a short time [#initial_connection_wait]_.  Some
+    applications might want to wait, so zc.zk.ZooKeeper accepts a wait
+    parameter that causes it to wait for a connection.
 
     >>> zk = None
     >>> import zc.thread
@@ -67,6 +67,9 @@ def wait_for_zookeeper():
     Yay!
 
     >>> zk.close()
+
+    .. [#initial_connection_wait] The initial wait is configurable,
+       mainly for testing, via zc.zk.ZooKeeper.initial_connection_wait
     """
 
 def session_timeout_with_child_and_data_watchers():
