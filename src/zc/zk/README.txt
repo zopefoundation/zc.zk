@@ -1165,7 +1165,7 @@ more, use the help function::
 Change History
 ==============
 
-0.8.0 (2012-05-??)
+0.8.0 (2012-05-15)
 ------------------
 
 - Fixed: ephemeral *sequence* nodes were restablished on session
