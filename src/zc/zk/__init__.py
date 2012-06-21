@@ -42,6 +42,8 @@ def loggingthread():
                   )
     while 1:
         line = f.readline().strip()
+        if not line:
+            continue
         try:
             if '@' in line:
                 level, message = line.split('@', 1)

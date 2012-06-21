@@ -1165,6 +1165,12 @@ more, use the help function::
 Change History
 ==============
 
+0.9.0 (2012-06-21)
+------------------
+
+- Fixed: The ZooKeeper logging sometimes generated lots of spurious
+  empty log messages.
+
 0.8.0 (2012-05-15)
 ------------------
 
