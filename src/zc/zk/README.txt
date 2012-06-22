@@ -1165,11 +1165,14 @@ more, use the help function::
 Change History
 ==============
 
-0.9.0 (2012-06-21)
+0.9.0 (2012-06-22)
 ------------------
 
-- Fixed: The ZooKeeper logging sometimes generated lots of spurious
-  empty log messages.
+- Added support for discovering and testing ephemeral addresses using
+  zc.monitor.  See ``monitor.test`` for details.
+
+- Fixed: The ZooKeeper logging bridge sometimes generated lots of
+  spurious empty log messages.
 
 0.8.0 (2012-05-15)
 ------------------

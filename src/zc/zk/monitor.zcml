@@ -1,0 +1,12 @@
+<configure xmlns="http://namespaces.zope.org/zope">
+
+<include package="zope.component" />
+
+<subscriber for="zc.zk.RegisteringServer" handler="zc.zk.monitor.notify" />
+
+<utility provides="zc.monitor.interfaces.IMonitorPlugin"
+         name="servers"
+         component="zc.zk.monitor.servers"
+         />
+
+</configure>

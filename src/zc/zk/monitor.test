@@ -1,0 +1,99 @@
+zc.monitor plugin for reportint on servers registered by a process
+==================================================================
+
+Sometimes, when deploying a process that registers servers listening
+on ephemeral ports, we need to be able to find out what the parts
+(addresses) are.  Looking at the ZooKeeper tree may not be convenient
+if there are multiple servers.
+
+Th zc.zk.monitor modules provides a zc.monitor plugin that can be
+subscribed to zc.zk.RegisteringServer events and then used in a
+zc.monitor server to report on registered servers.
+
+    >>> import sys, zc.zk.monitor, zc.zk
+
+    >>> zc.zk.monitor.notify(zc.zk.RegisteringServer(
+    ...     '1.2.3.4:8080', '/foo/bar', dict(pid=42)))
+
+    >>> zc.zk.monitor.servers(sys.stdout)
+    [{"path": "/foo/bar", "pid": 42, "address": "1.2.3.4:8080"}]
+
+It outputs a list of server objects as a JSON string.
+
+    >>> zc.zk.monitor.notify(zc.zk.RegisteringServer(
+    ...     '1.2.3.4:8081', '/foo/baz', dict(pid=42)))
+
+    >>> zc.zk.monitor.servers(sys.stdout) # doctest: +NORMALIZE_WHITESPACE
+    [{"path": "/foo/bar", "pid": 42, "address": "1.2.3.4:8080"},
+     {"path": "/foo/baz", "pid": 42, "address": "1.2.3.4:8081"}]
+
+If you specify a path, then only the address with that path will be
+output as a string (not json):
+
+    >>> zc.zk.monitor.servers(sys.stdout, '/foo/bar')
+    1.2.3.4:8080
+
+Helper scripts
+==============
+
+``zc.zk.monitor`` provides two helper scripts.  They aren't registered
+as setuptools entry points, as they are only useful for servers that
+use zc.monitor.
+
+zc.zk.monitor.check
+-------------------
+
+The check script (entry-point) takes a monitor address and a path,
+connects to the monitor server to get the address registered for a
+monitor, and connects to the address.  This can be used to check
+whether a server is up and running (or at least accepting
+connections).
+
+We'll test it by starting a server, registering it and checking it:
+
+    >>> import socket, zc.monitor, zc.thread, sys
+    >>> s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    >>> s.bind(('', 0))
+    >>> s.listen(1)
+
+    >>> _, server_port = s.getsockname()
+    >>> _, monitor_port = zc.monitor.start(('', 0))
+    >>> zc.monitor.register(zc.zk.monitor.servers, 'servers')
+    >>> zc.zk.monitor.notify(zc.zk.RegisteringServer(
+    ...     ':%s' % server_port, '/test/server', dict(pid=42)))
+
+    >>> zc.zk.monitor.check((':%s /test/server' % monitor_port).split())
+
+Here, check simply returned.  Now, if we stop our server:
+
+    >>> s.close()
+
+check will error:
+
+    >>> zc.zk.monitor.check((':%s /test/server' % monitor_port).split())
+    Traceback (most recent call last):
+    ...
+    error: [Errno 111] Connection refused
+
+This will, of course, cause it to exit with a non-zero status when run
+as an actual script.
+
+zc.zk.monitor.get_addr
+----------------------
+
+The get_addrscript simply prints the address it got from the monitor:
+
+    >>> zc.zk.monitor.get_addr((':%s /test/server' % monitor_port).split())
+    :37327
+
+This can be used to get the address to pass it to some other process.
+
+.. cleanup
+
+    >>> import zope.component
+    >>> zope.component.getSiteManager().unregisterUtility(
+    ...     zc.zk.monitor.servers,
+    ...     zc.monitor.interfaces.IMonitorPlugin, 'servers')
+    True
+
+    >>> zc.monitor.last_listener.close()

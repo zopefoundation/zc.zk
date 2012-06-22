@@ -1557,6 +1557,12 @@ def test_suite():
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
             checker=checker,
             ),
+        doctest.DocFileSuite(
+            'monitor.test',
+            checker = zope.testing.renormalizing.RENormalizing([
+                (re.compile(':\d+'), ':9999'),
+                ])
+            ),
         ))
     if not zc.zk.testing.testing_with_real_zookeeper():
         suite.addTest(unittest.makeSuite(Tests))
