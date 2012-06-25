@@ -68,12 +68,22 @@ Here, check simply returned.  Now, if we stop our server:
 
     >>> s.close()
 
-check will error:
+check will (almost) silently exit with a non-zero exit code:
 
+    >>> from zope.testing import loggingsupport
+    >>> handler = loggingsupport.InstalledHandler('zc.zk.monitor')
     >>> zc.zk.monitor.check((':%s /test/server' % monitor_port).split())
     Traceback (most recent call last):
     ...
-    error: [Errno 111] Connection refused
+    SystemExit: 1
+
+The monitor logs failure info at DEBUG level for debugging, if necessary:
+
+    >>> print handler
+    zc.zk.monitor DEBUG
+      Failed check
+
+    >>> handler.uninstall()
 
 This will, of course, cause it to exit with a non-zero status when run
 as an actual script.

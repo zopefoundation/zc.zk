@@ -1165,7 +1165,7 @@ more, use the help function::
 Change History
 ==============
 
-0.9.0 (2012-06-22)
+0.9.0 (2012-06-25)
 ------------------
 
 - Added support for discovering and testing ephemeral addresses using

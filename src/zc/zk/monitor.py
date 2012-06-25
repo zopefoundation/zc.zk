@@ -13,7 +13,10 @@
 ##############################################################################
 
 import json
+import logging
 import sys
+
+logger = logging.getLogger(__name__)
 
 _servers = []
 
@@ -49,16 +52,20 @@ def check(args=None):
 
     [addr, path] = args
 
-    sock = _connect(addr)
+    try:
+        sock = _connect(addr)
 
-    sock.sendall('servers %s\n' % path)
-    f = sock.makefile()
-    addr = f.readline()
+        sock.sendall('servers %s\n' % path)
+        f = sock.makefile()
+        addr = f.readline()
 
-    f.close()
-    sock.close()
+        f.close()
+        sock.close()
 
-    _connect(addr).close()
+        _connect(addr).close()
+    except Exception:
+        logger.debug("Failed check", exc_info=True)
+        sys.exit(1)
 
 def get_addr(args=None):
     if args is None:
