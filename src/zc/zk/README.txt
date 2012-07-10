@@ -1165,6 +1165,11 @@ more, use the help function::
 Change History
 ==============
 
+0.9.1 (2012-07-10)
+------------------
+
+- Fixed a packaging problem.
+
 0.9.0 (2012-06-25)
 ------------------
 
