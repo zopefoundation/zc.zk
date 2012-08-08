@@ -308,6 +308,52 @@ class ZooKeeper:
         return session
 
     def _traverse(self, path):
+        """This is used by a bunch of the methods.
+
+        We'll test som edge cases here.
+
+        We error on bad paths:
+
+        >>> zk = zc.zk.ZK('zookeeper.example.com:2181')
+
+        >>> zk.exists('')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+        >>> zk.exists('xxx')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+        >>> zk.exists('..')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+        >>> zk.exists('.')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+
+        >>> zk.get('')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+        >>> zk.get('xxx')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+        >>> zk.get('..')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+        >>> zk.get('.')
+        Traceback (most recent call last):
+        ...
+        BadArgumentsException: bad argument
+
+
+        """
+        if badpath(path):
+            raise zookeeper.BadArgumentsException('bad argument')
         node = self.root
         for name in path.split('/')[1:]:
             if not name:
@@ -405,7 +451,7 @@ class ZooKeeper:
                 path = base + '/' + name
             if base.endswith('/'):
                 raise zookeeper.BadArgumentsException('bad arguments')
-            node = self._traverse(base)
+            node = self._traverse(base or '/')
             for p in node.acl:
                 if not (p['perms'] & zookeeper.PERM_CREATE):
                     raise zookeeper.NoAuthException('not authenticated')
@@ -434,7 +480,7 @@ class ZooKeeper:
         if node.children:
             raise zookeeper.NotEmptyException('not empty')
         base, name = path.rsplit('/', 1)
-        bnode = self._traverse(base)
+        bnode = self._traverse(base or '/')
         if not clear:
             for p in bnode.acl:
                 if not (p['perms'] & zookeeper.PERM_DELETE):
@@ -491,8 +537,6 @@ class ZooKeeper:
 
         >>> zk.close()
         """
-        if badpath(path):
-            raise zookeeper.BadArgumentsException('bad argument')
         with self.lock:
             self._check_handle(handle)
             try:

@@ -1165,6 +1165,12 @@ more, use the help function::
 Change History
 ==============
 
+0.9.2 (2012-08-08)
+------------------
+
+- Fixed: The testing ZooKeeper mock didn't properly error when bad
+  paths were passed to APIs.
+
 0.9.1 (2012-07-10)
 ------------------
 
