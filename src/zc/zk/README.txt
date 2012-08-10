@@ -997,11 +997,14 @@ zc.zk.ZooKeeper
    object.
 
 ``get_properties(path)``
-   Get the properties for the node at the given path as a dictionary.
+   Get the raw properties for the node at the given path as a dictionary.
 
-   This is more efficient than ``properties`` when all you need is to
-   read the properties once, as it doesn't create a
-   `zc.zk.Properties`_ object.
+   This method is mainly for internal use.  Because it doesn't resolve
+   property links, it's of dubious use for applications.
+
+   (It's only included in the documentation because it was included
+    before with a suggestion that it was more efficient than
+    ``properties``, which it is if you just want raw data.)
 
 ``import_tree(text[, path='/'[, trim[, acl[, dry_run]]]])``
     Create tree nodes by importing a textual tree representation.
@@ -1164,6 +1167,12 @@ more, use the help function::
 
 Change History
 ==============
+
+
+0.9.2 (2012-08-10)
+------------------
+
+- Fixed: The documentation for get_properties was missleading.
 
 0.9.2 (2012-08-08)
 ------------------
