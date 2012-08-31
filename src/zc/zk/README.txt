@@ -1169,10 +1169,14 @@ Change History
 ==============
 
 
-0.9.2 (2012-08-10)
+0.9.2 (2012-??-??)
 ------------------
 
 - Fixed: The documentation for get_properties was missleading.
+
+- Fixed: Property links were incomplete:
+         Iteration and methods keys, values, and items weren't handled
+         correctly.
 
 0.9.2 (2012-08-08)
 ------------------

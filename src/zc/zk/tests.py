@@ -1500,6 +1500,44 @@ def create_recursive():
     >>> zk.close()
     """
 
+def property_links_edge_cases():
+    """
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /app
+    ...   threads => ..
+    ...   color = 'red'
+    ...   database -> /databases/foo
+    ... ''', '/fooservice')
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /app
+        color = u'red'
+        threads => = u'..'
+        database -> /databases/foo
+      /providers
+
+    >>> properties = zk.properties('/fooservice/app')
+    >>> sorted(properties)
+    [u'color', u'database ->', u'threads']
+
+    >>> sorted(properties.keys())
+    [u'color', u'database ->', u'threads']
+
+    >>> sorted(properties.values())
+    [1, u'/databases/foo', u'red']
+
+    >>> sorted(properties.items())
+    [(u'color', u'red'), (u'database ->', u'/databases/foo'), (u'threads', 1)]
+
+    >>> pprint(dict(properties))
+    {u'color': u'red', u'database ->': u'/databases/foo', u'threads': 1}
+    """
+
 
 event = threading.Event()
 def check_async(show=True, expected_status=0):

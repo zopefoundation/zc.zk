@@ -812,6 +812,12 @@ class Properties(NodeInfo, collections.Mapping):
                     (key + ' =>', self.data[key + ' =>'])
                     )
 
+    def __iter__(self):
+        for key in self.data:
+            if key.endswith(' =>'):
+                key = key[:-3]
+            yield key
+
     def __len__(self):
         return len(self.data)
 
