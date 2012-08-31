@@ -1176,7 +1176,7 @@ Change History
 ==============
 
 
-0.9.2 (2012-08-31)
+0.9.3 (2012-08-31)
 ------------------
 
 - Fixed: The documentation for get_properties was missleading.
