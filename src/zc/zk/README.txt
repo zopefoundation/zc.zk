@@ -959,12 +959,19 @@ zc.zk.ZooKeeper
     This should be called when cleanly shutting down servers to more
     quickly remove ephemeral nodes.
 
-``delete_recursive(path[, dry_run[, force]])``
+``delete_recursive(path[, dry_run[, force[, ignore_if_ephemeral]]])``
    Delete a node and all of it's sub-nodes.
 
    Ephemeral nodes or nodes containing them are not deleted by
    default. To force deletion of ephemeral nodes, supply the ``force``
    option with a true value.
+
+   Normally, a message is printed if a node can't be deleted because
+   it's ephemeral or has ephemeral sub-nodes.  If the
+   ``ignore_if_ephemeral`` option is true, the a message isn't printed
+   if the node's path was passed to ``delete_recursive`` directly.
+   (This is used by ``import_tree`` when the only nodes that would be
+   trimmed are ephemeral nodes.)
 
    The dry_run option causes a summary of what would be deleted to be
    printed without actually deleting anything.
@@ -1169,7 +1176,7 @@ Change History
 ==============
 
 
-0.9.2 (2012-??-??)
+0.9.2 (2012-08-31)
 ------------------
 
 - Fixed: The documentation for get_properties was missleading.
@@ -1177,6 +1184,9 @@ Change History
 - Fixed: Property links were incomplete:
          Iteration and methods keys, values, and items weren't handled
          correctly.
+
+- Fixed: When importing a tree with no changes and the trim option,
+         messages were printed for ephemeral nodes.
 
 0.9.2 (2012-08-08)
 ------------------

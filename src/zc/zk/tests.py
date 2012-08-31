@@ -1502,7 +1502,6 @@ def create_recursive():
 
 def property_links_edge_cases():
     """
-
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
     >>> zk.import_tree('''
     ... /app
@@ -1536,8 +1535,40 @@ def property_links_edge_cases():
 
     >>> pprint(dict(properties))
     {u'color': u'red', u'database ->': u'/databases/foo', u'threads': 1}
+
+    >>> zk.close()
     """
 
+def no_spam_when_not_trimming_ephemeral_nodes():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+
+    >>> zk.register_server('/fooservice/providers', 'a:a')
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+        /a:a
+          pid = 1234
+
+    >>> zk.import_tree('''
+    ... /fooservice
+    ...   database = u'/databases/foomain'
+    ...   favorite_color = u'red'
+    ...   threads = 1
+    ...   /providers
+    ... ''', trim=True)
+
+    >>> zk.close()
+    """
 
 event = threading.Event()
 def check_async(show=True, expected_status=0):

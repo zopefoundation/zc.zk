@@ -416,7 +416,8 @@ class ZooKeeper(Resolving):
                     continue
                 cpath = join(path, name)
                 if trim:
-                    self.delete_recursive(cpath, dry_run)
+                    self.delete_recursive(cpath, dry_run,
+                                          ignore_if_ephemeral=True)
                 else:
                     print 'extra path not trimmed:', cpath
 
@@ -462,10 +463,12 @@ class ZooKeeper(Resolving):
                     self.create(cpath, data, acl)
             self._import_tree(cpath, child, acl, trim, dry_run)
 
-    def delete_recursive(self, path, dry_run=False, force=False):
-        self._delete_recursive(path, dry_run, force)
+    def delete_recursive(self, path, dry_run=False, force=False,
+                         ignore_if_ephemeral=False):
+        self._delete_recursive(path, dry_run, force, ignore_if_ephemeral)
 
-    def _delete_recursive(self, path, dry_run, force):
+    def _delete_recursive(self, path, dry_run, force,
+                          ignore_if_ephemeral=False):
         ephemeral_child = None
         for name in sorted(self.get_children(path)):
             ephemeral_child = (
@@ -478,6 +481,8 @@ class ZooKeeper(Resolving):
             return ephemeral_child
 
         ephemeral = self.is_ephemeral(path) and not force
+        if ephemeral and ignore_if_ephemeral:
+            return
         if dry_run:
             if ephemeral:
                 print "wouldn't delete %s because it's ephemeral." % path
