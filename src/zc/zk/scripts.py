@@ -98,3 +98,30 @@ def import_(args=None):
         acl=[zc.zk.world_permission(options.permission)],
         )
 
+def validate_(args=None):
+    """Usage: %prog connection [file [path]]
+
+    Validate a tree definition from a file.
+
+    If no file is provided or if the import file is -, then
+    data are read from standard input.
+    """
+
+    if args is None:
+        args = sys.argv[1:]
+
+    parser = optparse.OptionParser(import_.__doc__)
+    options, args = parser.parse_args(args)
+    if len(args) != 1:
+        parser.parse_args(['-h'])
+    if args:
+        import_file = args.pop(0)
+    else:
+        import_file = '-'
+
+    if import_file == '-':
+        import_file = sys.stdin
+    else:
+        import_file = open(import_file)
+
+    zc.zk.parse_tree(import_file.read())
