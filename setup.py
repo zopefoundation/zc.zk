@@ -24,6 +24,7 @@ entry_points = """
 [console_scripts]
 zookeeper_export = zc.zk.scripts:export
 zookeeper_import = zc.zk.scripts:import_
+zookeeper_validate = zc.zk.scripts:validate_
 """
 
 from setuptools import setup
