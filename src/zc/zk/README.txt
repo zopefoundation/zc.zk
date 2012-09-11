@@ -1176,6 +1176,11 @@ Change History
 ==============
 
 
+0.9.4 (2012-09-11)
+------------------
+
+- Added entry point to create a script for validating a ZooKeeper tree.
+
 0.9.3 (2012-08-31)
 ------------------
 
