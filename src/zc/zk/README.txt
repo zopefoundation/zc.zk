@@ -884,6 +884,34 @@ The ``walk`` method can be used to walk over the nodes in a tree::
     /fooservice/provision/node1
     /fooservice/provision/node2
 
+You can omit ephemeral nodes:
+
+    >>> for path in zk.walk('/fooservice', ephemeral=False):
+    ...     print path
+    /fooservice
+    /fooservice/providers
+    /fooservice/providers/192.168.0.42:8080
+    /fooservice/providers/192.168.0.42:8081
+    /fooservice/providers/192.168.0.42:8082
+    /fooservice/provision
+    /fooservice/provision/node1
+    /fooservice/provision/node2
+
+You can also get a mutable list of children, which you can mutate:
+
+    >>> i = zk.walk('/fooservice', children=True)
+    >>> path, children = i.next()
+    >>> path, children
+    ('/fooservice', ['providers', 'provision'])
+
+    >>> del children[0]
+    >>> for path in i:
+    ...     print path
+    /fooservice/provision
+    /fooservice/provision/node1
+    /fooservice/provision/node2
+
+
 Modifications to nodes are reflected while traversing::
 
     >>> for path in zk.walk('/fooservice'):
@@ -1175,6 +1203,18 @@ more, use the help function::
 Change History
 ==============
 
+1.0.0 (2012-09-25)
+------------------
+
+- The walk method now provides options to:
+
+  - skip ephemeral nodes
+
+  - yield a mutable children list, allowing walking to be
+    short-circuited.
+
+- Fixed: if nodes were deleted (e.g. by other clients) then the walk
+  method could raise ``NoNodeException``.
 
 0.9.4 (2012-09-11)
 ------------------

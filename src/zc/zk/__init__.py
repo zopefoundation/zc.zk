@@ -563,9 +563,20 @@ class ZooKeeper(Resolving):
             return zookeeper.CONNECTING_STATE
         return zookeeper.state(self.handle)
 
-    def walk(self, path='/'):
-        yield path
-        for name in sorted(self.get_children(path)):
+    def walk(self, path='/', ephemeral=True, children=False):
+        try:
+            if not ephemeral and self.get(path)[1]['ephemeralOwner']:
+                return
+
+            _children = sorted(self.get_children(path))
+            if children:
+                yield path, _children
+            else:
+                yield path
+        except zookeeper.NoNodeException:
+            return
+
+        for name in _children:
             if path != '/':
                 name = '/'+name
             for p in self.walk(path+name):
