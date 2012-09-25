@@ -1621,11 +1621,6 @@ def test_suite():
             setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
             checker=checker,
             ),
-        doctest.DocTestSuite(
-            'zc.zk.testing',
-            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
-            checker=checker,
-            ),
         doctest.DocFileSuite(
             'monitor.test',
             checker = zope.testing.renormalizing.RENormalizing([
@@ -1647,5 +1642,10 @@ def test_suite():
             setUp=disconnectiontestsSetup, tearDown=zc.zk.testing.tearDown,
             checker=checker,
             ))
+        suite.addTest(doctest.DocTestSuite(
+            'zc.zk.testing',
+            setUp=zc.zk.testing.setUp, tearDown=zc.zk.testing.tearDown,
+            checker=checker,
+            )),
 
     return suite
