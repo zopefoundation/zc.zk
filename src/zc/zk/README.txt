@@ -432,7 +432,7 @@ Symbolic links
 
 ZooKeeper doesn't have a concept of symbolic links, but ``zc.zk``
 provides a convention for dealing with symbolic links.  When trying to
-resolve a path, if a node lacks a child, but have a property with a
+resolve a path, if a node lacks a child, but has a property with a
 name ending in ``' ->'``, the child will be found by following the
 path in the property value.
 
