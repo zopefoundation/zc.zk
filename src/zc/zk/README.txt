@@ -353,7 +353,17 @@ to do::
     >>> zk.import_tree(tree_text, trim=True, dry_run=True)
     would delete /lb/pools/retail.
 
-That's what we'd expect, so we go ahead::
+If we know we're not trimming things and want to avoid a warning, we
+can use trim=False:
+
+    >>> zk.import_tree(tree_text, trim=False)
+
+We can see that this didn't trim by using dry-run again:
+
+    >>> zk.import_tree(tree_text, trim=True, dry_run=True)
+    would delete /lb/pools/retail.
+
+We do want to trim, so we use trim=True:
 
     >>> zk.import_tree(tree_text, trim=True)
     >>> print zk.export_tree(),
@@ -1202,6 +1212,12 @@ more, use the help function::
 
 Change History
 ==============
+
+1.1.0 (2012-11-07)
+------------------
+
+- Change the import_tree method to provide a way to suppress warnings
+  about not trimming nodes using ``trim=False``.
 
 1.0.0 (2012-09-25)
 ------------------

@@ -402,7 +402,7 @@ class ZooKeeper(Resolving):
     def properties(self, path):
         return Properties(self, path)
 
-    def import_tree(self, text, path='/', trim=False, acl=OPEN_ACL_UNSAFE,
+    def import_tree(self, text, path='/', trim=None, acl=OPEN_ACL_UNSAFE,
                     dry_run=False):
         while path.endswith('/'):
             path = path[:-1] # Mainly to deal w root: /
@@ -418,7 +418,7 @@ class ZooKeeper(Resolving):
                 if trim:
                     self.delete_recursive(cpath, dry_run,
                                           ignore_if_ephemeral=True)
-                else:
+                elif trim is None:
                     print 'extra path not trimmed:', cpath
 
         for name, child in sorted(node.children.iteritems()):
