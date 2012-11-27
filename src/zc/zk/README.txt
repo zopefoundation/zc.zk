@@ -1213,6 +1213,12 @@ more, use the help function::
 Change History
 ==============
 
+1.1.1 (2012-??-??)
+------------------
+
+Fixed: nonsensical error messages when trying to import properties at
+       the top-level of an import file.
+
 1.1.0 (2012-11-07)
 ------------------
 

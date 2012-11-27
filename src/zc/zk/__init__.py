@@ -967,7 +967,8 @@ def parse_tree(text, node_class=ParseNode):
             indents[-1] = indent, data
         else:
             if indents[-2][1] is root:
-                raise ValueError("Can't above imported nodes.")
+                raise ValueError(
+                    "Can't import properties above imported nodes.")
             properties = indents[-2][1].properties
             name, value = data
             if name in properties:

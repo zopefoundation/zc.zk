@@ -1570,6 +1570,19 @@ def no_spam_when_not_trimming_ephemeral_nodes():
     >>> zk.close()
     """
 
+def cant_import_top_level_properties():
+    r"""
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('x = 1')
+    Traceback (most recent call last):
+    ...
+    ValueError: Can't import properties above imported nodes.
+    >>> zk.import_tree('/y\nx = 1')
+    Traceback (most recent call last):
+    ...
+    ValueError: Can't import properties above imported nodes.
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()
