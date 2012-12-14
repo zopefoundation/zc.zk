@@ -22,6 +22,7 @@ extras_require = dict(
 
 entry_points = """
 [console_scripts]
+zookeeper_set_property = zc.zk.scripts:set_property
 zookeeper_export = zc.zk.scripts:export
 zookeeper_import = zc.zk.scripts:import_
 zookeeper_validate = zc.zk.scripts:validate_
