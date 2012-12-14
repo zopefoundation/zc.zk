@@ -855,6 +855,51 @@ method, with the exception that it provides less flexibility for
 specifing access control lists. Use the ``--help`` option to see how
 to use it.
 
+Propery-update script
+=====================
+
+The `zc.zk` package provides a utility script for updating individual
+properties::
+
+  zookeeper_set_property zookeeper.example.com:2181 /fooservice \
+      threads=4 debug=True comment='ok'
+
+.. -> example
+
+    >>> example = example.replace('\\', '')
+    >>> args = example.strip().split()
+    >>> set_property = pkg_resources.load_entry_point(
+    ...     'zc.zk', 'console_scripts', args.pop(0))
+    >>> set_property(args)
+    data updated
+    comment: u'ok'
+    debug: True
+    secret: u'1234'
+    threads: 4
+    >>> zk.print_tree('/fooservice')
+    /fooservice
+      comment = u'ok'
+      debug = True
+      secret = u'1234'
+      threads = 4
+      /providers
+        /192.168.0.42:8080
+          pid = 6894
+        /192.168.0.42:8081
+          pid = 6894
+        /192.168.0.42:8082
+          pid = 6894
+      /provision
+        /node1
+        /node2
+
+
+The first argument to the script is the path of the node to be
+updated. Any number of additional arguments of the form:
+``NAME=PYTHONEXPRESSION`` are provided to supply updates.  If setting
+strings, you may have to quote the argument, as in "comment='a
+comment'".
+
 Iterating over a tree
 =====================
 
@@ -1213,11 +1258,14 @@ more, use the help function::
 Change History
 ==============
 
-1.1.1 (2012-??-??)
+1.2.0 (2012-12-14)
 ------------------
 
-Fixed: nonsensical error messages when trying to import properties at
-       the top-level of an import file.
+- A new script, zookeeper_set_property provides a simple way to update
+  individual properties on a node.
+
+- Fixed: nonsensical error messages when trying to import properties at
+         the top-level of an import file.
 
 1.1.0 (2012-11-07)
 ------------------

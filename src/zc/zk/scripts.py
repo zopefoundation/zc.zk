@@ -125,3 +125,19 @@ def validate_(args=None):
         import_file = open(import_file)
 
     zc.zk.parse_tree(import_file.read())
+
+def set_property(args=None):
+    if args is None:
+        args = sys.argv[1:]
+
+    connection = args.pop(0)
+    path = args.pop(0)
+    zk = zc.zk.ZooKeeper(connection)
+
+    def _property(arg):
+        name, expr = arg.split('=', 1)
+        return name, eval(expr, {})
+
+    zk.properties(path).update(dict(map(_property, args)))
+
+    zk.close()
