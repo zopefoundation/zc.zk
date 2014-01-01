@@ -77,7 +77,13 @@ dotdot = re.compile(r"/[^/]+/\.\.(/|$)")
 class Resolving:
 
     def resolve(self, path, seen=()):
-        path = dotdot.sub(r"\1", dot.sub(r"\1", path))
+
+        # normalize dots
+        while 1:
+            npath = dotdot.sub(r"\1", dot.sub(r"\1", path))
+            if npath == path:
+                break
+            path = npath
 
         if self.exists(path):
             return path
