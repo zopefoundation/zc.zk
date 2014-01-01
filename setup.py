@@ -13,11 +13,11 @@
 ##############################################################################
 name, version = 'zc.zk', '0'
 
-install_requires = ['setuptools', 'zc.thread']
+install_requires = ['setuptools', 'zc.thread', 'kazoo']
 extras_require = dict(
-    test=['zope.testing >= 4.1.0', 'zc-zookeeper-static', 'mock', 'manuel',
+    test=['zope.testing >= 4.1.0', 'mock', 'manuel',
           'zope.event', 'netifaces', 'zope.component', 'zc.monitor'],
-    static=['zc-zookeeper-static'],
+    static=[],
     )
 
 entry_points = """

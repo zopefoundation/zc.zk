@@ -121,7 +121,7 @@ Now, if we make changes, they'll be properly reflected:
     >>> dict(properties)
     {u'a': 1}
 
-    >>> zk.register_server('/fooservice', 'x')
+    >>> zk.register('/fooservice', 'x')
     children changed True
 
     >>> sorted(children)
