@@ -95,6 +95,28 @@ def testing_with_real_zookeeper():
     """
     return os.environ.get('TEST_ZOOKEEPER_CONNECTION')
 
+class SlowClient(kazoo.client.KazooClient):
+
+    __test_sleep = float(os.environ.get('TEST_ZOOKEEPER_SLEEP', 0.01))
+
+    def create(self, *a, **k):
+        try:
+            return super(SlowClient, self).create(*a, **k)
+        finally:
+            time.sleep(self.__test_sleep)
+
+    def delete(self, *a, **k):
+        try:
+            return super(SlowClient, self).delete(*a, **k)
+        finally:
+            time.sleep(self.__test_sleep)
+
+    def set(self, *a, **k):
+        try:
+            return super(SlowClient, self).set(*a, **k)
+        finally:
+            time.sleep(self.__test_sleep)
+
 def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     """Set up zookeeper emulation.
 
@@ -142,21 +164,14 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
         globs['/zc.zk.testing.test-root'] = test_root
         setup_tree(tree, real_zk, test_root, True)
 
-        orig_client = kazoo.client.KazooClient
-
         @side_effect(
             setupstack.context_manager(
                 test, mock.patch('kazoo.client.KazooClient')))
         def client(addr, *a, **k):
             if addr != connection_string:
-                return orig_client(addr, *a, **kw)
+                return SlowClient(addr, *a, **kw)
             else:
-                return orig_client(real_zk+test_root, *a, **k)
-
-        setupstack.register(
-            test, lambda : setattr(zc.zk.ZooKeeper, 'test_sleep', 0))
-        zc.zk.ZooKeeper.test_sleep = .01
-        time.sleep(float(os.environ.get('TEST_ZOOKEEPER_SLEEP', 0)))
+                return SlowClient(real_zk+test_root, *a, **k)
 
     else:
         if tree:

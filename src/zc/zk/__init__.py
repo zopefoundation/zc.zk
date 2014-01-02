@@ -129,6 +129,7 @@ class ZooKeeper(Resolving):
                 connection_string, session_timeout)
             started = False
         else:
+            client = connection_string
             started = True
             self.close = lambda : None
 

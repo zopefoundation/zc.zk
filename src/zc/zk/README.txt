@@ -86,28 +86,29 @@ the node specified by the given path.  The iterable is automatically
 updated when new providers are registered::
 
     >>> zk.register('/fooservice/providers', ('192.168.0.42', 8081))
-
-    >>> wait_until(lambda : len(addresses) == 2)
     >>> sorted(addresses)
     ['192.168.0.42:8080', '192.168.0.42:8081']
+
+You can also get the number of children with ``len``::
+
+    >>> len(addresses)
+    2
 
 You can call the iterable with a callback function that is called
 whenever the list of children changes::
 
     >>> @zk.children('/fooservice/providers')
     ... def addresses_updated(addresses):
-    ...     global updated
-    ...     updated = sorted(addresses)
-
-    >>> updated
+    ...     print 'addresses changed'
+    ...     print sorted(addresses)
+    addresses changed
     ['192.168.0.42:8080', '192.168.0.42:8081']
 
 The callback is called immediately with the children.  When we add
 another child, it'll be called again::
 
     >>> zk.register('/fooservice/providers', ('192.168.0.42', 8082))
-    >>> wait_until(lambda : len(updated) == 3)
-    >>> updated
+    addresses changed
     ['192.168.0.42:8080', '192.168.0.42:8081', '192.168.0.42:8082']
 
 Get service configuration data
@@ -132,10 +133,10 @@ as function decorators to get update notification::
 
     >>> @zk.properties('/fooservice')
     ... def data_updated(data):
-    ...     global updated
-    ...     updated = data
-    >>> for item in sorted(updated.items()):
-    ...     print '%s: %r' % item
+    ...     print 'data updated'
+    ...     for item in sorted(data.items()):
+    ...         print '%s: %r' % item
+    data updated
     database: u'/databases/foomain'
     favorite_color: u'red'
     threads: 1
@@ -150,25 +151,31 @@ You can update properties by calling the ``update`` method::
 
     >>> thread_info = {'threads': 2}
     >>> data.update(thread_info, secret='123')
-    >>> wait_until(lambda : updated['threads'] == 2)
+    data updated
+    database: u'/databases/foomain'
+    favorite_color: u'red'
+    secret: u'123'
+    threads: 2
 
 You can also set individual properties:
 
     >>> data['threads'] = 1
-    >>> wait_until(lambda : updated['threads'] == 1)
+    data updated
+    database: u'/databases/foomain'
+    favorite_color: u'red'
+    secret: u'123'
+    threads: 1
 
 If you call the ``set`` method, keys not listed are removed:
 
     >>> data.set(threads= 3, secret='1234')
-    >>> wait_until(lambda : updated['threads'] == 3)
-    >>> sorted(updated)
-    ['secret', 'threads']
+    data updated
+    secret: u'1234'
+    threads: 3
 
 Both ``update`` and ``set`` can take data from a positional data argument, or
 from keyword parameters.  Keyword parameters take precedent over the
 positional data argument.
-
-.. test
 
 Tree-definition format, import, and export
 ==========================================
@@ -515,7 +522,8 @@ be updated::
     >>> zk.delete_recursive('/cms/databases/main')
     >>> main_children.path
     '/cms/databases/main'
-    >>> wait_until(lambda : main_children.real_path == '/databases/cms')
+    >>> main_children.real_path
+    u'/databases/cms'
 
 .. test
 
@@ -530,14 +538,16 @@ updates::
     >>> sorted(main_children)
     ['providers']
     >>> _ = zk.delete('/databases/cms/providers')
-    >>> wait_until(lambda : not main_children)
+    >>> sorted(main_children)
+    []
 
 .. test
 
     >>> dict(main_properties)
     {}
     >>> zk.properties('/databases/cms').set(a=1)
-    >>> wait_until(lambda : dict(main_properties) == {u'a': 1})
+    >>> dict(main_properties)
+    {u'a': 1}
 
 Symbolic links can be relative. If a link doesn't start with a slash,
 it's interpreted relative to the node the link occurs in.  The special
@@ -622,7 +632,8 @@ use a property link::
     ...                '/test-propery-links')
     extra path not trimmed: /test-propery-links/cms/databases
     extra path not trimmed: /test-propery-links/cms/providers
-    >>> wait_until(lambda : properties['threads =>'] == '/fooservice')
+    >>> properties['threads =>']
+    u'/fooservice'
     >>> properties['threads']
     3
 
@@ -845,6 +856,11 @@ properties::
     >>> set_property = pkg_resources.load_entry_point(
     ...     'zc.zk', 'console_scripts', args.pop(0))
     >>> set_property(args)
+    data updated
+    comment: u'ok'
+    debug: True
+    secret: u'1234'
+    threads: 4
     >>> zk.print_tree('/fooservice')
     /fooservice
       comment = u'ok'
@@ -1107,6 +1123,10 @@ zc.zk.ZooKeeper
 
 ``walk(path)``
    Iterate over the nodes of a tree rooted at path.
+
+In addition, ``ZooKeeper`` instances provide shortcuts to the following
+kazoo client methods: ``exists``, ``create``, ``delete``,
+``get_children``, ``get``, and ``set``.
 
 zc.zk.Children
 --------------

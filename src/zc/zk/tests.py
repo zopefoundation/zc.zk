@@ -66,8 +66,11 @@ def test_children():
     >>> bool(children)
     False
 
-    >>> _ = zk.create('/test/a')
-    >>> wait_until(lambda : sorted(children) == ['a'])
+    >>> def create(path):
+    ...     zk.create(path, '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> create('/test/a')
+    >>> sorted(children)
+    ['a']
 
     >>> len(children)
     1
@@ -78,15 +81,13 @@ We can register callbacks:
 
     >>> @children
     ... def cb(c):
-    ...     global updated
-    ...     updated = sorted(c)
-    >>> updated
-    ['a']
+    ...     print 'good', sorted(c)
+    good ['a']
 
 When we register a callback, it gets called immediately with a children object.
 
-    >>> _ = zk.create('/test/b')
-    >>> wait_until(lambda : updated == ['a', 'b'])
+    >>> create('/test/b')
+    good ['a', 'b']
     >>> sorted(children)
     ['a', 'b']
 
@@ -99,8 +100,8 @@ If a callback raises an error immediately, it isn't saved:
     ...
     ValueError
 
-    >>> _ = zk.create('/test/c')
-    >>> wait_until(lambda : updated == ['a', 'b', 'c'])
+    >>> create('/test/c')
+    good ['a', 'b', 'c']
 
     >>> len(children)
     3
@@ -113,31 +114,29 @@ cancelled:
     >>> logger = zklogger()
 
     >>> badnow = False
-    >>> bad_calls = 0
     >>> @children
     ... def bad(c):
     ...     assert c is children
-    ...     global bad_calls
-    ...     bad_calls += 1
+    ...     print 'bad later', sorted(c)
     ...     if badnow:
     ...         raise ValueError
+    bad later ['a', 'b', 'c']
 
     >>> _ = zk.delete('/test/c')
-    >>> wait_until(lambda : updated == ['a', 'b'])
-    >>> wait_until(lambda : bad_calls == 2)
+    good ['a', 'b']
+    bad later ['a', 'b']
 
     >>> badnow = True
-    >>> _ = zk.delete('/test/b')
-    >>> wait_until(lambda : bad_calls == 3) # doctest: +ELLIPSIS
+    >>> _ = zk.delete('/test/b') # doctest: +ELLIPSIS
+    good ['a']
+    bad later ['a']
     ERROR watch(zc.zk.Children(/test), <function bad at ...>)
     Traceback (most recent call last):
     ...
     ValueError
 
-    >>> wait_until(lambda : updated == ['a'])
-
     >>> _ = zk.delete('/test/a')
-    >>> wait_until(lambda : updated == [])
+    good []
 
 A callback can also cancel itself by raising CancelWatch:
 
@@ -145,17 +144,19 @@ A callback can also cancel itself by raising CancelWatch:
     >>> @children
     ... def cancel(c):
     ...     assert c is children
-    ...     global cancelled
-    ...     cancelled = sorted(c)
+    ...     print 'cancel later', sorted(c)
     ...     if cancelnow:
     ...         raise zc.zk.CancelWatch
+    cancel later []
 
-    >>> _ = zk.create('/test/a')
-    >>> wait_until(lambda : cancelled == ['a'])
+    >>> create('/test/a')
+    good ['a']
+    cancel later ['a']
 
     >>> cancelnow = True
-    >>> _ = zk.create('/test/b')
-    >>> wait_until(lambda : cancelled == ['a', 'b']) # doctest: +ELLIPSIS
+    >>> create('/test/b') # doctest: +ELLIPSIS
+    good ['a', 'b']
+    cancel later ['a', 'b']
     DEBUG cancelled watch(zc.zk.Children(/test), <function cancel at ...>)
 
     >>> logger.uninstall()
@@ -172,41 +173,51 @@ def test_handler_cleanup():
 Children:
 
     >>> children = zk.children('/test')
-    >>> calls = 0
     >>> @children
     ... def kids(c):
-    ...     global calls
-    ...     calls += 1
-
-    >>> _ = zk.create('/test/a')
-    >>> wait_until(lambda : calls == 2)
-
+    ...     print c
+    zc.zk.Children(/test)
     >>> del children
-    >>> _ = zk.create('/test/aa')
-    >>> wait_until(lambda : calls == 2)
+    >>> _ = zk.create('/test/a')
+    zc.zk.Children(/test)
     >>> del kids
+    >>> _ = zk.create('/test/aa')
 
-    >>> time.sleep(.1)
-    >>> calls
-    2
+    >>> @zk.children('/test')
+    ... def kids(c):
+    ...     print c
+    zc.zk.Children(/test)
+
+    >>> _ = zk.create('/test/aaa')
+    zc.zk.Children(/test)
+    >>> del kids
+    >>> _ = zk.create('/test/aaaa')
 
 Properties:
 
     >>> properties = zk.properties('/test')
     >>> @properties
     ... def props(c):
-    ...     global calls
-    ...     calls += 1
+    ...     print c
+    zc.zk.Properties(/test)
 
-    >>> properties['a'] = 0
-    >>> wait_until(lambda : calls == 3)
+    >>> p2 = zk.properties('/test')
     >>> del properties
+    >>> p2['a'] = 1
+    zc.zk.Properties(/test)
+    >>> del props
+    >>> p2['a'] += 1
+
+    >>> @zk.properties('/test')
+    ... def props(c):
+    ...     print c
+    zc.zk.Properties(/test)
+
+    >>> p2['a'] += 1
+    zc.zk.Properties(/test)
     >>> del props
 
-    >>> zk.properties('/test')['a'] += 1
-    >>> time.sleep(.1)
-    >>> calls
-    3
+    >>> p2['a'] += 1
 
     >>> zk.close()
     """
@@ -222,51 +233,46 @@ Set up some handlers.
     >>> children = zk.children('/test')
     >>> @children
     ... def _(arg):
-    ...     global c1
-    ...     c1 = list(arg)
+    ...     print 1, list(arg)
+    1 []
 
     >>> @children
     ... def _(arg=None):
-    ...     global c2
-    ...     c2 = arg
+    ...     print 2, arg
+    2 zc.zk.Children(/test)
 
-    >>> c2 = None
-    >>> _ = zk.create('/test/a')
-    >>> wait_until(lambda : c1 == ['a'])
-    >>> wait_until(lambda : c2 is children)
+    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    1 ['a']
+    2 zc.zk.Children(/test)
 
-    >>> c2 = None
     >>> _ = zk.delete('/test/a')
-    >>> wait_until(lambda : c1 == [])
-    >>> wait_until(lambda : c2 is children)
+    1 []
+    2 zc.zk.Children(/test)
 
     >>> properties = zk.properties('/test')
     >>> @properties
     ... def _(arg):
-    ...     global p3
-    ...     p3 = dict(arg)
+    ...     print 3, dict(arg)
+    3 {u'a': 1}
 
     >>> @properties
     ... def _(arg=None):
-    ...     global p4
-    ...     p4 = arg
+    ...     print 4, arg
+    4 zc.zk.Properties(/test)
 
-    >>> p4 = None
     >>> _ = zk.set('/test', '{"b": 2}')
-    >>> wait_until(lambda : p3 == {u'b': 2})
-    >>> wait_until(lambda : p4 is properties)
+    3 {u'b': 2}
+    4 zc.zk.Properties(/test)
 
 Hack data into the child watcher to verify it's cleared:
 
     >>> children.data = 'data'
-    >>> c1 = p3 = 0
 
 Now delete the node.  The handlers that accept no arguments will be called:
 
     >>> _ = zk.delete('/test')
-    >>> wait_until(lambda : c2 is None and p4 is None)
-    >>> c1 == 0 and p3 == 0
-    True
+    4 None
+    2 None
 
 Note that the handlers that accept 0 arguments were called.
 
@@ -378,24 +384,25 @@ def property_set_and_update_variations():
     >>> data = zk.properties('/fooservice')
     >>> @data
     ... def _(data):
-    ...     global updated
-    ...     updated = dict(data)
+    ...     pprint(dict(data), width=70)
+    {u'database': u'/databases/foomain',
+     u'favorite_color': u'red',
+     u'threads': 1}
 
     >>> data.set(dict(x=1))
-    >>> wait_until(lambda : updated == {u'x': 1})
+    {u'x': 1}
     >>> data.set(dict(x=1), x=2, y=3)
-    >>> wait_until(lambda : updated == {u'x': 2, u'y': 3})
+    {u'x': 2, u'y': 3}
     >>> data.set(z=1)
-    >>> wait_until(lambda : updated == {u'z': 1})
+    {u'z': 1}
     >>> data.update(a=1)
-    >>> wait_until(lambda : updated == {u'a': 1, u'z': 1})
+    {u'a': 1, u'z': 1}
     >>> data.update(dict(b=1), a=2)
-    >>> wait_until(lambda : updated == {u'a': 2, u'b': 1, u'z': 1})
+    {u'a': 2, u'b': 1, u'z': 1}
     >>> data.update(dict(c=1))
-    >>> wait_until(lambda : updated == {u'a': 2, u'b': 1, u'c': 1, u'z': 1})
+    {u'a': 2, u'b': 1, u'c': 1, u'z': 1}
     >>> data.update(dict(d=1), d=2)
-    >>> wait_until(
-    ...     lambda : updated == {u'a': 2, u'b': 1, u'c': 1, u'd': 2, u'z': 1})
+    {u'a': 2, u'b': 1, u'c': 1, u'd': 2, u'z': 1}
 
     >>> zk.close()
     """
@@ -585,18 +592,17 @@ def property_links_expand_callbacks_to_linked_nodes():
 
     >>> ab = zk.properties('/a/b')
 
-    >>> updated = 0
     >>> @ab
     ... def _(properties):
-    ...     global updated
-    ...     updated += 1
+    ...     print 'updated'
+    updated
 
     >>> ac = zk.properties('/a/c')
     >>> ac.update(x=3)
-    >>> wait_until(lambda : updated == 2)
+    updated
 
     >>> ab.update(xx=2)
-    >>> wait_until(lambda : updated == 3)
+    updated
 
     >>> ac.update(x=4)
 
@@ -745,11 +751,10 @@ def deleting_linked_nodes():
 
     >>> ab = zk.properties('/a/b')
 
-    >>> updated = 0
     >>> @ab
     ... def _(properties):
-    ...     global updated
-    ...     updated += 1
+    ...     print 'updated'
+    updated
 
     >>> ab['x']
     1
@@ -761,7 +766,7 @@ def deleting_linked_nodes():
 
     >>> _ = zk.set('/a', '{"c ->": "/d"}')
     >>> _ = zk.delete('/a/c')
-    >>> wait_until(lambda : updated == 2)
+    updated
     >>> ab['x']
     2
 
