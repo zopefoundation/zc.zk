@@ -973,8 +973,6 @@ def test_suite():
             ),
         ))
     if not zc.zk.testing.testing_with_real_zookeeper():
-        suite.addTest(unittest.makeSuite(Tests))
-        suite.addTest(unittest.makeSuite(LoggingTests))
         suite.addTest(doctest.DocFileSuite(
             'ephemeral_node_recovery_on_session_reestablishment.test',
             setUp=setUpEphemeral_node_recovery_on_session_reestablishment,

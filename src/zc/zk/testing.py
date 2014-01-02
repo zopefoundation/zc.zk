@@ -162,45 +162,25 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     if real_zk:
         test_root = '/zc.zk.testing.test-root%s' % random.randint(0, sys.maxint)
         globs['/zc.zk.testing.test-root'] = test_root
-        setup_tree(tree, real_zk, test_root, True)
 
         @side_effect(
             setupstack.context_manager(
                 test, mock.patch('kazoo.client.KazooClient')))
         def client(addr, *a, **k):
             if addr != connection_string:
-                return SlowClient(addr, *a, **kw)
+                return SlowClient(addr, *a, **k)
             else:
                 return SlowClient(real_zk+test_root, *a, **k)
 
     else:
-        if tree:
-            faux_zookeeper = ZooKeeper(connection_string, Node())
-        else:
-            faux_zookeeper = ZooKeeper(
-                connection_string,
-                Node(
-                    fooservice = Node(
-                        json.dumps(dict(
-                            database = "/databases/foomain",
-                            threads = 1,
-                            favorite_color= "red",
-                            )),
-                        providers = Node()
-                        ),
-                    zookeeper = Node('', quota=Node()),
-                    ),
-                )
+        faux_zookeeper = ZooKeeper(connection_string, Node())
 
         @side_effect(setupstack.context_manager(
             test, mock.patch('kazoo.client.KazooClient')))
         def client(*a, **k):
             return Client(faux_zookeeper, *a, **k)
 
-        if tree:
-            zk = zc.zk.ZooKeeper(connection_string)
-            zk.import_tree(tree)
-            zk.close()
+    setup_tree(tree, real_zk, test_root, True)
 
     globs['wait_until'] = wait_until # BBB
     globs['ZooKeeper'] = faux_zookeeper
