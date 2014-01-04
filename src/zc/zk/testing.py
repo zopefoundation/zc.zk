@@ -66,12 +66,12 @@ def wait_until(func=None, timeout=9):
         if time.time() > deadline:
             raise AssertionError('timeout')
 
-def setup_tree(tree, connection_string, root='/test-root',
-               zookeeper_node=False):
+def setup_tree(tree, connection_string, root, zookeeper_node=False):
     zk = zc.zk.ZooKeeper(connection_string)
-    if zk.client.exists(root):
+    if root != '/' and zk.client.exists(root):
         zk.delete_recursive(root)
-    zk.client.create(root)
+    if root != '/':
+        zk.client.create(root)
     zk.import_tree(tree or """
     /fooservice
       /providers
@@ -174,6 +174,8 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
 
     else:
         faux_zookeeper = ZooKeeper(connection_string, Node())
+        test_root = '/'
+        real_zk = connection_string
 
         @side_effect(setupstack.context_manager(
             test, mock.patch('kazoo.client.KazooClient')))
@@ -201,6 +203,92 @@ def tearDown(test):
         zk.close()
 
 
+class Watch:
+
+    def __init__(self, data):
+        self.data = data
+
+    func = None
+    def __call__(self, func):
+        if self.func is None:
+            self.value = self.data()
+            func(self.value)
+        self.func = func
+
+    def update(self, value):
+        self.value = value
+        self.func(value)
+
+class Client:
+
+    def __init__(self, zookeeper, hosts="127.0.0.1:2162", timeout=10.0):
+        self.zookeeper = zookeeper
+        self.hosts = hosts
+        self.timeout = timeout
+        self.listeners = []
+        self.state = kazoo.protocol.states.KazooState.LOST
+
+    def add_listener(self, func):
+        self.listeners.append(func)
+
+    def start(self):
+        def handle(state):
+            self.state = state
+            for func in self.listeners:
+                func(state)
+        self.handle = self.zookeeper.init(self.hosts, handle, self.timeout)
+
+    def create(
+        self, path, value="", acl=zc.zk.OPEN_ACL_UNSAFE, ephemeral=False
+        ):
+        return self.zookeeper.create(self.handle, path, value, acl, ephemeral)
+
+    def delete(self, path):
+        return self.zookeeper.delete(self.handle, path)
+
+    def ChildrenWatch(self, path):
+        node = self.zookeeper._traverse(path)
+        watch = Watch(lambda : list(node.children))
+        node.child_watchers += ((self.zookeeper.handle, watch), )
+        return watch
+
+    def DataWatch(self, path):
+        watch = Watch(lambda : self.zookeeper.get_data(path))
+        self.zookeeper.watchers[path] += ((self.handle, watch), )
+        return watch
+
+    def stop(self):
+        self.zookeeper.close(self.handle)
+
+    def close(self):
+        del self.zookeeper
+
+    def lose_session(self, func=None):
+        session = self.zookeeper.sessions[self.handle]
+        session.disconnect()
+        if func is not None:
+            func()
+        session.expire()
+        session.connect()
+
+    def exists(self, path):
+        return self.zookeeper.exists(self.handle, path)
+
+    def get(self, path):
+        return self.zookeeper.get(self.handle, path)
+
+    def get_children(self, path):
+        return self.zookeeper.get_children(self.handle, path)
+
+    def get_acls(self, path):
+        return self.zookeeper.get_acls(self.handle, path)
+
+    def set_acls(self, path, acls, aversion=-1):
+        return self.zookeeper.set_acls(self.handle, path, acls, aversion)
+
+    def set(self, path, value, version=-1):
+        return self.zookeeper.set(self.handle, path, value, version)
+
 class Session:
 
     def __init__(self, zk, handle, watch=None, session_timeout=None):
@@ -221,44 +309,31 @@ class Session:
 
     def expire(self):
         self.zk._clear_session(self)
-        self.newstate(kazoo.protocol.states.KazooState.EXPIRED)
+        self.newstate(kazoo.protocol.states.KazooState.LOST)
 
     def newstate(self, state):
+        old = self.state
         self.state = state
         if self.watch is not None:
             self.watch(state)
-        self.zk._session_event(self.handle, state)
+        if (state == kazoo.protocol.states.KazooState.CONNECTED and
+            old == kazoo.protocol.states.KazooState.LOST
+            ):
+            self.zk._restore_session(self)
 
     def check(self):
         if self.state == KazooState.SUSPENDED:
             raise kazoo.exceptions.SessionExpiredError()
-        elif self.state == KazooState.Lost:
+        elif self.state == KazooState.LOST:
             raise kazoo.exceptions.SessionExpiredError()
         elif self.state != KazooState.CONNECTED:
             raise AssertionError('Invalid state')
 
-badpath = re.compile(r'(^([^/]|$))|(/\.\.?(/|$))|(./$)').search
-
-class Client:
-
-    def __init__(self, zookeeper, hosts, timeout):
-        self.zookeeper = zookeeper
-        self.hosts = hosts
-        self.timeout = timeout
-        self.listeners = []
-        self.state = kazoo.protocol.states.KazooState.LOST
-
-    def add_listener(self, func):
-        self.listeners.append(func)
-
-    def start(self):
-        def handle(state):
-            self.state = state
-            for func in self.listeners:
-                func(state)
-        self.handle = self.zookeeper.init(self.hosts, handle, self.timeout)
+badpath = re.compile(r'(^|/)\.\.?(/|$)').search
 
 class ZooKeeper:
+
+    handle = -1
 
     def __init__(self, connection_string, tree):
         self.connection_strings = set([connection_string])
@@ -267,13 +342,12 @@ class ZooKeeper:
         self.lock = threading.RLock()
         self.failed = {}
         self.sequence_number = 0
-        self.exists_watchers = collections.defaultdict(tuple)
+        self.watchers = collections.defaultdict(tuple)
 
     def init(self, addr, watch=None, session_timeout=4000):
         with self.lock:
-            handle = 0
-            while handle in self.sessions:
-                handle += 1
+            self.handle += 1
+            handle = self.handle
             self.sessions[handle] = Session(
                 self, handle, watch, session_timeout)
             if addr in self.connection_strings:
@@ -305,45 +379,27 @@ class ZooKeeper:
         We error on bad paths:
 
         >>> zk = zc.zk.ZK('zookeeper.example.com:2181')
-
-        >>> zk.exists('')
-        Traceback (most recent call last):
-        ...
-        BadArgumentsException: bad argument
-        >>> zk.exists('xxx')
-        Traceback (most recent call last):
-        ...
-        BadArgumentsException: bad argument
         >>> zk.exists('..')
         Traceback (most recent call last):
         ...
-        BadArgumentsException: bad argument
+        BadArgumentsError: bad argument
         >>> zk.exists('.')
         Traceback (most recent call last):
         ...
-        BadArgumentsException: bad argument
-
-        >>> zk.get('')
-        Traceback (most recent call last):
-        ...
-        BadArgumentsException: bad argument
-        >>> zk.get('xxx')
-        Traceback (most recent call last):
-        ...
-        BadArgumentsException: bad argument
+        BadArgumentsError: bad argument
         >>> zk.get('..')
         Traceback (most recent call last):
         ...
-        BadArgumentsException: bad argument
+        BadArgumentsError: bad argument
         >>> zk.get('.')
         Traceback (most recent call last):
         ...
-        BadArgumentsException: bad argument
+        BadArgumentsError: bad argument
 
 
         """
         if badpath(path):
-            raise kazoo.exceptions.BadArgumentError('bad argument')
+            raise kazoo.exceptions.BadArgumentsError('bad argument')
         node = self.root
         for name in path.split('/')[1:]:
             if not name:
@@ -355,16 +411,7 @@ class ZooKeeper:
 
         return node
 
-    def _session_event(self, handle, state):
-        with self.lock:
-            for path, watchers in self.exists_watchers.items():
-                for h, w in watchers:
-                    if h == handle:
-                        w(h, zookeeper.SESSION_EVENT, state, '')
-            self.root.session_event(handle, state)
-
-
-    def _clear_session(self, session):
+    def _clear_session(self, session, close=False):
         """
         Test: don't sweat ephemeral nodes that were already deleted
 
@@ -379,70 +426,70 @@ class ZooKeeper:
         """
         handle = session.handle
         with self.lock:
-            self.root.clear_watchers(handle)
-            for path in self.exists_watchers:
-                self.exists_watchers[path] = tuple(
-                    (h, w) for (h, w) in self.exists_watchers[path]
-                    if h != handle
+            self.root.clear_watchers(handle, close)
+            for path in self.watchers:
+                self.watchers[path] = tuple(
+                    (h, w) for (h, w) in self.watchers[path]
+                    if h != handle or not close
                     )
             for path in list(session.nodes):
                 try:
                     self._delete(session.handle, path, clear=True)
-                except zookeeper.NoNodeException:
+                except kazoo.exceptions.NoNodeError:
                     pass # deleted in another session, perhaps
+
+    def _restore_session(self, session):
+        handle = session.handle
+        with self.lock:
+            self.root.restore_watchers(handle)
+            for path in self.watchers:
+                value = self.get_data(path)
+                for h, w in self.watchers[path]:
+                    if h == handle and value != w.value:
+                        w.update(value)
 
     def close(self, handle):
         with self.lock:
-            self._clear_session(self._check_handle(handle, False))
+            self._clear_session(self._check_handle(handle, False), True)
             self.sessions.pop(handle).disconnect()
 
     def state(self, handle):
         with self.lock:
             return self._check_handle(handle, False).state
 
-    def create(self, handle, path, data, acl, flags=0):
+    def create(self, handle, path, data, acl, ephemeral=False):
         with self.lock:
             self._check_handle(handle)
+            while path.endswith('/'):
+                path = path[:-1]
             base, name = path.rsplit('/', 1)
-            if flags & zookeeper.SEQUENCE:
-                self.sequence_number += 1
-                name += "%.10d" % self.sequence_number
-                path = base + '/' + name
-            if base.endswith('/'):
-                raise zookeeper.BadArgumentsException('bad arguments')
             node = self._traverse(base or '/')
-            for p in node.acl:
-                if not (p['perms'] & zookeeper.PERM_CREATE):
-                    raise zookeeper.NoAuthException('not authenticated')
             if name in node.children:
-                raise zookeeper.NodeExistsException()
+                raise kazoo.exceptions.NodeExistsError()
             node.children[name] = newnode = Node(data)
             newnode.acl = acl
-            newnode.flags = flags
-            node.children_changed(handle, zookeeper.CONNECTED_STATE, base)
-
-            for h, w in self.exists_watchers.pop(path, ()):
-                w(h, zookeeper.CREATED_EVENT, zookeeper.CONNECTED_STATE, path)
-
-            if flags & zookeeper.EPHEMERAL:
+            newnode.ephemeral = ephemeral
+            node.children_changed(self.sessions)
+            for h, w in self.watchers.get(path, ()):
+                w.update(data)
+            if ephemeral:
                 self.sessions[handle].add(path)
             return path
 
     def _delete(self, handle, path, version=-1, clear=False):
         node = self._traverse(path)
         if version != -1 and node.version != version:
-            raise zookeeper.BadVersionException('bad version')
+            raise kazoo.exceptions.BadVersionError('bad version')
         if node.children:
-            raise zookeeper.NotEmptyException('not empty')
+            raise kazoo.exceptions.NotEmptyError('not empty')
         base, name = path.rsplit('/', 1)
         bnode = self._traverse(base or '/')
-        if not clear:
-            for p in bnode.acl:
-                if not (p['perms'] & zookeeper.PERM_DELETE):
-                    raise zookeeper.NoAuthException('not authenticated', path)
         del bnode.children[name]
-        node.deleted(handle, zookeeper.CONNECTED_STATE, path)
-        bnode.children_changed(handle, zookeeper.CONNECTED_STATE, base)
+        for h, w in self.watchers.get(path, ()):
+            w.update(None)
+
+        node.deleted()
+        bnode.children_changed(self.sessions)
         if path in self.sessions[handle].nodes:
             self.sessions[handle].remove(path)
 
@@ -452,39 +499,18 @@ class ZooKeeper:
             self._delete(handle, path, version)
         return 0
 
-    def exists(self, handle, path, watch=None):
+    def exists(self, handle, path):
         """Test whether a node exists:
 
         >>> zk = zc.zk.ZK('zookeeper.example.com:2181')
         >>> zk.exists('/test_exists')
 
-        We can set watches:
-
-        >>> def watch(*args):
-        ...     print args
-
-        >>> zk.exists('/test_exists', watch)
-        >>> _ = zk.create('/test_exists', '', zc.zk.OPEN_ACL_UNSAFE)
-        (0, 1, 3, '/test_exists')
-
         When a node exists, exists retirnes it's meta data, which is
         the same as the second result from get:
 
+        >>> _ = zk.create('/test_exists')
         >>> zk.exists('/test_exists') == zk.get('/test_exists')[1]
         True
-
-        We can set watches on nodes that exist, too:
-
-        >>> zk.exists('/test_exists', watch) == zk.get('/test_exists')[1]
-        True
-
-        >>> _ = zk.delete('/test_exists')
-        (0, 2, 3, '/test_exists')
-
-        Watches are one-time:
-
-        >>> _ = zk.create('/test_exists', '', zc.zk.OPEN_ACL_UNSAFE)
-        >>> _ = zk.delete('/test_exists')
 
         >>> zk.close()
         """
@@ -492,157 +518,112 @@ class ZooKeeper:
             self._check_handle(handle)
             try:
                 node = self._traverse(path)
-                if watch:
-                    node.exists_watchers += ((handle, watch), )
-                return node.meta()
-            except zookeeper.NoNodeException:
-                if watch:
-                    self.exists_watchers[path] += ((handle, watch), )
+                return node
+            except kazoo.exceptions.NoNodeError:
                 return None
 
-    def get_children(self, handle, path, watch=None):
+    def get_children(self, handle, path):
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
-            for p in node.acl:
-                if not (p['perms'] & zookeeper.PERM_READ):
-                    raise zookeeper.NoAuthException('not authenticated')
-            if watch:
-                node.child_watchers += ((handle, watch), )
             return list(node.children)
 
-    def get(self, handle, path, watch=None):
+    def get(self, handle, path):
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
-            for p in node.acl:
-                if not (p['perms'] & zookeeper.PERM_READ):
-                    raise zookeeper.NoAuthException('not authenticated')
-            if watch:
-                node.watchers += ((handle, watch), )
-            return node.data, node.meta()
+            return node.data, node
 
-    def set(self, handle, path, data, version=-1, async=False):
+    def set(self, handle, path, data, version=-1):
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
-            for p in node.acl:
-                if not (p['perms'] & zookeeper.PERM_WRITE):
-                    raise zookeeper.NoAuthException('not authenticated')
             if version != -1 and node.version != version:
-                raise zookeeper.BadVersionException('bad version')
+                raise kazoo.exceptions.BadVersionError('bad version')
             node.data = data
-            node.changed(handle, zookeeper.CONNECTED_STATE, path)
-            if async:
-                return node.meta()
-            else:
-                return 0
+            for h, w in self.watchers.get(path, ()):
+                w.update(data)
+            return True
 
     def set_watcher(self, handle, watch):
         with self.lock:
             self._check_handle(handle).watch = watch
 
-    def get_acl(self, handle, path):
+    def get_acls(self, handle, path):
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
-            return node.meta(), node.acl
+            return node.acl, node
 
-    def aget_acl(self, handle, path, completion=None):
-        return self._doasync(completion, handle,
-                             self.get_acl, handle, path)
-
-    def set_acl(self, handle, path, aversion, acl):
+    def set_acls(self, handle, path, acl, aversion):
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(path)
-            for p in node.acl:
-                if not (p['perms'] & zookeeper.PERM_ADMIN):
-                    raise zookeeper.NoAuthException('not authenticated', path)
-            if aversion != node.aversion:
-                raise zookeeper.BadVersionException("bad version")
+            if aversion != -1 and aversion != node.aversion:
+                raise kazoo.exceptions.BadVersionError("bad version")
             node.aversion += 1
             node.acl = acl
 
-            return 0
+            return True
+
+    def get_data(self, path):
+        try:
+            return self._traverse(path).data
+        except kazoo.exceptions.NoNodeError:
+            return None
 
 class Node:
-    watchers = child_watchers = exists_watchers = ()
-    flags = 0
+    child_watchers = ()
     version = aversion = cversion = 0
     acl = zc.zk.OPEN_ACL_UNSAFE
+    ephemeral = False
 
-    def meta(self):
-        return dict(
-            version = self.version,
-            aversion = self.aversion,
-            cversion = self.cversion,
-            ctime = self.ctime,
-            mtime = self.mtime,
-            numChildren = len(self.children),
-            dataLength = len(self.data),
-            ephemeralOwner=(1 if self.flags & zookeeper.EPHEMERAL else 0),
-            )
+    @property
+    def numChildren(self):
+        return len(self.children)
+
+    @property
+    def dataLength(self):
+        return len(self.data)
+
+    @property
+    def ephemeralOwner(self):
+        return self.ephemeral
 
     def __init__(self, data='', **children):
         self.data = data
         self.children = children
         self.ctime = self.mtime = time.time()
 
-    def children_changed(self, handle, state, path):
-        watchers = self.child_watchers
-        self.child_watchers = ()
-        for h, w in watchers:
-            w(h, zookeeper.CHILD_EVENT, state, path)
+    def children_changed(self, sessions):
+        value = list(self.children)
+        for h, w in self.child_watchers:
+            if sessions[h].state == kazoo.protocol.states.KazooState.CONNECTED:
+                w.update(value)
         self.cversion += 1
 
-    def changed(self, handle, state, path):
-        watchers = self.watchers
-        self.watchers = ()
-        for h, w in watchers:
-            w(h, zookeeper.CHANGED_EVENT, state, path)
+    def changed(self):
+        for w in self.watchers:
+            w.func(self.data)
         self.version += 1
         self.mtime = time.time()
 
-    def deleted(self, handle, state, path):
-        watchers = self.watchers
-        self.watchers = ()
-        for h, w in watchers:
-            w(h, zookeeper.DELETED_EVENT, state, path)
-        watchers = self.exists_watchers
-        self.exists_watchers = ()
-        for h, w in watchers:
-            w(h, zookeeper.DELETED_EVENT, state, path)
-        watchers = self.child_watchers
-        self.watchers = ()
-        for h, w in watchers:
-            w(h, zookeeper.DELETED_EVENT, state, path)
+    def deleted(self):
+        self.child_watchers = ()
 
-    def session_event(self, handle, state):
-        for (h, w) in self.watchers:
-            if h == handle:
-                w(h, zookeeper.SESSION_EVENT, state, '')
-        for (h, w) in self.child_watchers:
-            if h == handle:
-                w(h, zookeeper.SESSION_EVENT, state, '')
-        for (h, w) in self.exists_watchers:
-            if h == handle:
-                w(h, zookeeper.SESSION_EVENT, state, '')
-        for child in self.children.values():
-            child.session_event(handle, state)
-
-    def clear_watchers(self, handle):
-        self.watchers = tuple(
-            (h, w) for (h, w) in self.watchers
-            if h != handle
-            )
+    def clear_watchers(self, handle, close=False):
         self.child_watchers = tuple(
             (h, w) for (h, w) in self.child_watchers
-            if h != handle
+            if h != handle or not close
             )
-        self.exists_watchers = tuple(
-            (h, w) for (h, w) in self.exists_watchers
-            if h != handle
-            )
-        for name, child in self.children.items():
-            child.clear_watchers(handle)
+        for child in self.children.values():
+            child.clear_watchers(handle, close)
+
+    def restore_watchers(self, handle):
+        value = list(self.children)
+        for h, w in self.child_watchers:
+            if h == handle and value != w.value:
+                w.update(value)
+
+        for child in self.children.values():
+            child.restore_watchers(handle)

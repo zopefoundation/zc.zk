@@ -939,10 +939,6 @@ def setUpREADME(test):
 
 def disconnectiontestsSetup(test):
     zc.zk.testing.setUp(test)
-    setupstack.register(
-        test, setattr, zc.zk.ZooKeeper, 'initial_connection_wait',
-        zc.zk.ZooKeeper.initial_connection_wait)
-    zc.zk.ZooKeeper.initial_connection_wait = .1
 
 checker = zope.testing.renormalizing.RENormalizing([
     (re.compile('pid = \d+'), 'pid = 9999'),

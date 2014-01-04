@@ -111,17 +111,14 @@ class Resolving:
         except kazoo.exceptions.NoNodeError:
             raise kazoo.exceptions.NoNodeError(path)
 
-aliases = 'exists', 'create', 'delete', 'get_children', 'get', 'set'
+aliases = 'exists', 'create', 'delete', 'get_children', 'get'
 
 class ZooKeeper(Resolving):
-
-    initial_connection_wait = 9.0
 
     def __init__(
         self,
         connection_string="127.0.0.1:2181",
         session_timeout=10.0,
-        wait=False,
         ):
 
         if isinstance(connection_string, basestring):
@@ -195,7 +192,16 @@ class ZooKeeper(Resolving):
             path += '/'
 
         for addr in addrs:
-            self.create(path + addr, encode(kw), acl, ephemeral=True)
+            data = encode(kw)
+            apath = path + addr
+            self.create(apath, data, acl, ephemeral=True)
+            self.ephemeral[apath] = dict(data=data, acl=acl)
+
+    def set(self, path, data, *a, **k):
+        r = self.client.set(path, data, *a, **k)
+        if path in self.ephemeral:
+            self.ephemeral[path]['data'] = data
+        return r
 
     def children(self, path):
         return Children(self, path)
@@ -381,15 +387,15 @@ class KazooWatch:
     def __init__(self, client, children, path, watch):
         self.watch_ref = weakref.ref(watch)
         if children:
-            client.ChildrenWatch(path, allow_session_lost=False)(self.handle)
+            client.ChildrenWatch(path)(self.handle)
 
             # Add a data watch so we know when a node is deleted.
-            @client.DataWatch(path, allow_session_lost=False)
+            @client.DataWatch(path)
             def handle(data, *_):
                 if data is None:
                     self.handle(data)
         else:
-            client.DataWatch(path, allow_session_lost=False)(self.handle)
+            client.DataWatch(path)(self.handle)
 
     def handle(self, data, *rest):
         watch = self.watch_ref()
