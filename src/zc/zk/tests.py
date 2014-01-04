@@ -1014,6 +1014,26 @@ def test_special_values():
     >>> zk.close()
     """
 
+def test_property_loops():
+    r"""
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /x
+    ...   a = 1
+    ...   b => ../y
+    ... /y
+    ...   a => ../x
+    ...   b = 2
+    ... ''')
+    >>> logger = zklogger()
+    >>> props = zk.properties('/x')
+    >>> sorted(props.items())
+    [(u'a', 1), (u'b', 2)]
+
+    >>> zk.close()
+    >>> logger.uninstall()
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()

@@ -496,50 +496,53 @@ class Properties(Watch, collections.Mapping):
 
     children = False
 
-    def __init__(self, *args):
-        self._linked_properties = {} # {prop_link_path -> Properties}
-        Watch.__init__(self, *args)
+    def __init__(self, zk, path, watch=True, _linked_properties=None):
+        if _linked_properties is None:
+             # {prop_link_path -> Properties}
+            _linked_properties = {}
+        self._linked_properties = _linked_properties
+        Watch.__init__(self, zk, path, watch)
 
     def _setData(self, data, handle_errors=False):
         # Save a mapping as our data.
         # Set up watchers for any property links.
-        _linked_properties = {}
-        for name in data:
-            if name.endswith(' =>') and name[:-3] not in data:
-                link = data[name].strip().split()
-                try:
-                    if not (1 <= len(link) <= 2):
-                        raise ValueError('Bad link data')
-                    path = link.pop(0)
-                    if path[0] != '/':
-                        path = self.path + '/' + path
-
-                    # TODO: why resolve here? Why not store the original
-                    # path in the linked properties.
-                    path = self.zk.resolve(path)
-                    properties = self._setup_link(path, _linked_properties)
-                    properties[link and link[0] or name[:-3]]
-                except Exception, v:
-                    if handle_errors:
-                        logger.exception(
-                            'Bad property link %r %r', name, data[name])
-                    else:
-                        raise ValueError("Bad property link",
-                                         name, data[name], v)
-
-        # Only after processing all links, do we update instance attrs:
+        old = getattr(self, 'data', None)
         self.data = data
-        self._linked_properties = _linked_properties
+        try:
+            for name in data:
+                if name.endswith(' =>') and name[:-3] not in data:
+                    link = data[name].strip().split()
+                    try:
+                        if not (1 <= len(link) <= 2):
+                            raise ValueError('Bad link data')
+                        path = link.pop(0)
+                        if path[0] != '/':
+                            path = self.path + '/' + path
 
-    def _setup_link(self, path, _linked_properties=None):
-        if _linked_properties is None:
-            _linked_properties = self._linked_properties
+                        # TODO: why resolve here? Why not store the original
+                        # path in the linked properties.
+                        path = self.zk.resolve(path)
+                        properties = self._setup_link(path)
+                        properties[link and link[0] or name[:-3]]
+                    except Exception, v:
+                        if handle_errors:
+                            logger.exception(
+                                'Bad property link %r %r', name, data[name])
+                        else:
+                            raise ValueError("Bad property link",
+                                             name, data[name], v)
+        except:
+            self.data = old # rollback
+            raise
 
-        props = _linked_properties.get(path, self)
-        if props is not self:
+    def _setup_link(self, path):
+        _linked_properties = self._linked_properties
+        props = _linked_properties.get(path)
+        if props is not None:
             return props
 
-        props = self.zk.properties(path, self.watch)
+        _linked_properties[self.real_path] = self
+        props = Properties(self.zk, path, self.watch, _linked_properties)
 
         _linked_properties[path] = props
 
@@ -547,11 +550,13 @@ class Properties(Watch, collections.Mapping):
             @props.callbacks.append
             def notify(properties=None):
                 if properties is None:
-                    # A node we were watching was deleted.  We shuld
+                    # A node we were watching was deleted.  We should
                     # try to re-resolve it. This doesn't happen often,
                     # let's just reset everything.
-                    self._setData(self.data)
+                    self._setData(self.data, True)
                 elif self._linked_properties.get(path) is properties:
+                    # Notify our subscribers that there was a change
+                    # that might effect them. (But don't update our data.)
                     self._notify(None)
                 else:
                     # We must not care about it anymore.
@@ -608,6 +613,7 @@ class Properties(Watch, collections.Mapping):
         return self.data.copy()
 
     def _set(self, data):
+        self._linked_properties = {}
         self._setData(data)
         self.zk.set(self.path, encode(data))
 
