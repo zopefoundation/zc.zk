@@ -662,8 +662,13 @@ It's common to use an empty string for a host name when calling bind
 to listen on all IPv4 interfaces.  If you pass an address with an
 empty host to ``register`` and `netifaces
 <http://alastairs-place.net/projects/netifaces/>`_ is installed, then
-all of the IPv4 addresses [#ifaces]_ (for the given port) will be
-registered.  If netifaces isn't installed and you pass an empty host
+all of the non-local IPv4 addresses [#ifaces]_ (for the given port) will be
+registered.
+
+If there are no non-local interfaces (not connected to network), then
+the local IPV4 interface will be registered.
+
+If netifaces isn't installed and you pass an empty host
 name, then the fully-qualified domain name, as returned by
 ``socket.getfqdn()`` will be used for the host.
 

@@ -913,6 +913,109 @@ def cant_import_top_level_properties():
     ValueError: Can't import properties above imported nodes.
     """
 
+connected_addrs = {
+    'eth0': {2: [{'addr': '192.168.24.60',
+                  'broadcast': '192.168.24.255',
+                  'netmask': '255.255.255.0'}],
+             10: [{'addr': 'fe80::21c:c0ff:fe1a:d12%eth0',
+                   'netmask': 'ffff:ffff:ffff:ffff::'}],
+             17: [{'addr': '00:1c:c0:1a:0d:12',
+                   'broadcast': 'ff:ff:ff:ff:ff:ff'}]},
+    'foo': {2: [{'addr': '192.168.24.61',
+                 'broadcast': '192.168.24.255',
+                 'netmask': '255.255.255.0'}],
+            },
+    'lo': {2: [{'addr': '127.0.0.1',
+                'netmask': '255.0.0.0',
+                'peer': '127.0.0.1'}],
+           10: [{'addr': '::1',
+                 'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
+           17: [{'addr': '00:00:00:00:00:00',
+                 'peer': '00:00:00:00:00:00'}],
+           },
+    }
+def blank_host_netifaces_connected():
+    r"""
+    If netifaces can be imported and we're connected to a network,
+    then non-local interfaces will be registered when calling
+    register:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> with mock.patch('netifaces.ifaddresses',
+    ...                  side_effect=lambda iface: connected_addrs[iface]):
+    ...   with mock.patch('netifaces.interfaces',
+    ...                   side_effect=lambda : list(connected_addrs)):
+    ...     zk.register('/fooservice/providers', ':8080')
+    ...     zk.register('/fooservice/providers', ('', 8081))
+
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /192.168.24.60:8080
+        pid = 64501
+      /192.168.24.60:8081
+        pid = 64501
+      /192.168.24.61:8080
+        pid = 64501
+      /192.168.24.61:8081
+        pid = 64501
+    """
+
+disconnected_addrs = {
+    'lo': {2: [{'addr': '127.0.0.1',
+                'netmask': '255.0.0.0',
+                'peer': '127.0.0.1'}],
+           10: [{'addr': '::1',
+                 'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
+           17: [{'addr': '00:00:00:00:00:00',
+                 'peer': '00:00:00:00:00:00'}]},
+    }
+def blank_host_netifaces_disconnected():
+    r"""
+    If netifaces can be imported and we're connected to a network,
+    then non-local interfaces will be registered when calling
+    register:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> with mock.patch('netifaces.ifaddresses',
+    ...                  side_effect=lambda iface: disconnected_addrs[iface]):
+    ...   with mock.patch('netifaces.interfaces',
+    ...                   side_effect=lambda : list(disconnected_addrs)):
+    ...     zk.register('/fooservice/providers', ':8080')
+    ...     zk.register('/fooservice/providers', ('', 8081))
+
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /127.0.0.1:8080
+        pid = 64509
+      /127.0.0.1:8081
+        pid = 64509
+    """
+
+def blank_host_nonetifaces():
+    r"""
+    If netifaces can't be imported, we use socket.fqdn:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+
+    >>> import netifaces
+    >>> netifaces = sys.modules['netifaces']
+    >>> try:
+    ...     sys.modules['netifaces'] = None
+    ...     with mock.patch('socket.getfqdn',
+    ...                      side_effect=lambda : 'service.example.com'):
+    ...       zk.register('/fooservice/providers', ':8080')
+    ...       zk.register('/fooservice/providers', ('', 8081))
+    ... finally:
+    ...     sys.modules['netifaces'] = netifaces
+
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /service.example.com:8080
+        pid = 64527
+      /service.example.com:8081
+        pid = 64527
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()
