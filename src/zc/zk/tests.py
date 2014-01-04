@@ -958,37 +958,8 @@ def blank_host_netifaces_connected():
         pid = 64501
       /192.168.24.61:8081
         pid = 64501
-    """
 
-disconnected_addrs = {
-    'lo': {2: [{'addr': '127.0.0.1',
-                'netmask': '255.0.0.0',
-                'peer': '127.0.0.1'}],
-           10: [{'addr': '::1',
-                 'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
-           17: [{'addr': '00:00:00:00:00:00',
-                 'peer': '00:00:00:00:00:00'}]},
-    }
-def blank_host_netifaces_disconnected():
-    r"""
-    If netifaces can be imported and we're connected to a network,
-    then non-local interfaces will be registered when calling
-    register:
-
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> with mock.patch('netifaces.ifaddresses',
-    ...                  side_effect=lambda iface: disconnected_addrs[iface]):
-    ...   with mock.patch('netifaces.interfaces',
-    ...                   side_effect=lambda : list(disconnected_addrs)):
-    ...     zk.register('/fooservice/providers', ':8080')
-    ...     zk.register('/fooservice/providers', ('', 8081))
-
-    >>> zk.print_tree('/fooservice/providers')
-    /providers
-      /127.0.0.1:8080
-        pid = 64509
-      /127.0.0.1:8081
-        pid = 64509
+    >>> zk.close()
     """
 
 def blank_host_nonetifaces():
@@ -1014,6 +985,33 @@ def blank_host_nonetifaces():
         pid = 64527
       /service.example.com:8081
         pid = 64527
+
+    >>> zk.close()
+    """
+
+def test_special_values():
+    r"""
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> props = zk.properties('/fooservice')
+
+    >>> _ = zk.set('/fooservice', ''); print dict(props)
+    {}
+
+    >>> _ = zk.set('/fooservice', 'xxx'); print dict(props)
+    {'string_value': 'xxx'}
+    >>> _ = zk.set('/fooservice', '{xxx}'); print dict(props)
+    {'string_value': '{xxx}'}
+    >>> _ = zk.set('/fooservice', '\n{xxx}\n'); print dict(props)
+    {'string_value': '\n{xxx}\n'}
+
+    >>> props.set(b=2); print zk.get('/fooservice')[0]
+    {"b":2}
+    >>> props.set(); print zk.get('/fooservice')[0]
+    <BLANKLINE>
+    >>> props.set(string_value='xxx'); print zk.get('/fooservice')[0]
+    xxx
+
+    >>> zk.close()
     """
 
 event = threading.Event()
