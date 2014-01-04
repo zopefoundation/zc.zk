@@ -206,8 +206,8 @@ class ZooKeeper(Resolving):
     def children(self, path):
         return Children(self, path)
 
-    def properties(self, path):
-        return Properties(self, path)
+    def properties(self, path, watch=True):
+        return Properties(self, path, watch)
 
     def import_tree(self, text, path='/', trim=None, acl=OPEN_ACL_UNSAFE,
                     dry_run=False):
@@ -408,9 +408,10 @@ class KazooWatch:
 class Watch:
     # Base class for child and data watchers
 
-    def __init__(self, zk, path):
+    def __init__(self, zk, path, watch=True):
         self.zk = zk
         self.path = path
+        self.watch = watch
         self.callbacks = []
         self.register(True)
 
@@ -424,7 +425,13 @@ class Watch:
                 self._deleted()
         else:
             self.real_path = real_path
-            KazooWatch(self.zk.client, self.children, real_path, self)
+            if self.watch:
+                KazooWatch(self.zk.client, self.children, real_path, self)
+            else:
+                if self.children:
+                    self.setData(self.zk.get_children(real_path))
+                else:
+                    self.setData(self.zk.get(real_path)[0])
 
     def handle(self, data, *rest):
         if data is None:
@@ -469,6 +476,8 @@ class Watch:
                     logger.exception("watch(%r, %r)", self, callback)
 
     def __call__(self, func):
+        if not self.watch:
+            raise TypeError("Can't set callbacks without watching.")
         func(self)
         self.callbacks.append(func)
         return self
@@ -530,23 +539,24 @@ class Properties(Watch, collections.Mapping):
         if props is not self:
             return props
 
-        props = self.zk.properties(path)
+        props = self.zk.properties(path, self.watch)
 
         _linked_properties[path] = props
 
-        def notify(properties=None):
-            if properties is None:
-                # A node we were watching was deleted.  We shuld try to
-                # re-resolve it. This doesn't happen often, let's just reset
-                # everything.
-                self._setData(self.data)
-            elif self._linked_properties.get(path) is properties:
-                self._notify(None)
-            else:
-                # We must not care about it anymore.
-                raise CancelWatch()
+        if self.watch:
+            @props.callbacks.append
+            def notify(properties=None):
+                if properties is None:
+                    # A node we were watching was deleted.  We shuld
+                    # try to re-resolve it. This doesn't happen often,
+                    # let's just reset everything.
+                    self._setData(self.data)
+                elif self._linked_properties.get(path) is properties:
+                    self._notify(None)
+                else:
+                    # We must not care about it anymore.
+                    raise CancelWatch()
 
-        props.callbacks.append(notify)
         return props
 
     def setData(self, data):

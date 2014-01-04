@@ -177,6 +177,34 @@ Both ``update`` and ``set`` can take data from a positional data argument, or
 from keyword parameters.  Keyword parameters take precedent over the
 positional data argument.
 
+Getting property data without tracking changes
+==============================================
+
+
+Sometimes, you want to get service data, but don't want to watch for
+changes. If you pass ``watch=False`` to ``properties``, Then properies
+won't track changes.  In this case, you can't set callback functions,
+but you can still update data.
+
+.. test
+
+    >>> p2 = zk.properties('/fooservice', watch=False)
+    >>> sorted(p2)
+    ['secret', 'threads']
+    >>> p2(lambda data: None)
+    Traceback (most recent call last):
+    ...
+    TypeError: Can't set callbacks without watching.
+
+    >>> p2['threads'] = 2 # doctest: +ELLIPSIS
+    data updated
+    ...
+    threads: 2
+    >>> p2.update(threads=3) # doctest: +ELLIPSIS
+    data updated
+    ...
+    threads: 3
+
 Tree-definition format, import, and export
 ==========================================
 
