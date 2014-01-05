@@ -1034,6 +1034,43 @@ def test_property_loops():
     >>> logger.uninstall()
     """
 
+def test_existing_client():
+    r"""
+
+    You can use an existing kazoo client:
+
+    >>> import kazoo.client
+    >>> client = kazoo.client.KazooClient('zookeeper.example.com:2181')
+    >>> zk = zc.zk.ZooKeeper(client)
+    >>> zk.client is client
+    True
+
+You have to start the client yourself:
+
+    >>> try: zk.print_tree()
+    ... except Exception: pass
+    ... else: print 'oops'
+
+    >>> client.start()
+
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+
+Closing doesn't close the client:
+
+    >>> zk.close()
+
+    >>> sorted(client.get_children('/'))
+    ['fooservice', 'zookeeper']
+
+    >>> client.stop()
+    >>> client.close()
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()
