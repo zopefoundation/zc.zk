@@ -197,6 +197,8 @@ class ZooKeeper(Resolving):
             self.create(apath, data, acl, ephemeral=True)
             self.ephemeral[apath] = dict(data=data, acl=acl)
 
+    register_server = register # backward compatibility
+
     def set(self, path, data, *a, **k):
         r = self.client.set(path, data, *a, **k)
         if path in self.ephemeral:

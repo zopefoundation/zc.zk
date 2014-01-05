@@ -1071,6 +1071,22 @@ Closing doesn't close the client:
     >>> client.close()
     """
 
+def test_register_server():
+    """The older register_server name is preserved for backward compatibility.
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice', 'test:1')
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+      /test:1
+        pid = 65825
+    >>> zk.close()
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()
