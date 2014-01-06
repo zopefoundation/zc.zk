@@ -1250,8 +1250,13 @@ more, use the help function::
 Change History
 ==============
 
-0.1.0
------
+2.0.0a2 (2014-01-06)
+--------------------
+
+Fixed packaging bug.
+
+2.0.0a1 (2014-01-06)
+--------------------
 
 Initial version forked from zc.zk 1.2.0
 
