@@ -13,6 +13,22 @@ The use cases are:
 - Get and set service configuration data.
 - Model system architecture as a tree.
 
+Important note for zc.zk 1.x users
+  Version 2 is mostly. but not entirely backward compatible.
+
+  Although the goal of version 1 was primarily service registration
+  and discovery, it also provided a high-level ZooKeeper API.  `Kazoo
+  <https://pypi.python.org/pypi/kazoo/>`_ is a much better high-level
+  interface for ZooKeeper because:
+
+  - It isn't based on the buggy ZooKeeper C interface and Python
+    extension.
+
+  - It doesn't assumne that ephemeral nodes should be reestablished
+    when a session expires and is recreated.
+
+  zc.zk 2 uses Kazoo.
+
 This package makes no effort to support Windows.  (Patches to support
 Windows might be accepted if they don't add much complexity.)
 
