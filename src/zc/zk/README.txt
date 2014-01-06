@@ -22,7 +22,7 @@ Installation
 ============
 
 You can install this as you would any other distribution.
-It rquires the kazoo Python ZooKeeper interface.
+It requires the kazoo Python ZooKeeper interface.
 
 Instantiating a ZooKeeper helper
 ================================
@@ -36,7 +36,8 @@ The ZooKeeper constructor takes a ZooKeeper connection string, which is a
 comma-separated list of addresses of the form *HOST:PORT*.  It defaults
 to ``'127.0.0.1:2181'``, which is convenient during development.
 
-You can also pass a kazoo client object, instead of a connectionb string.
+You can also pass a kazoo client object, instead of a connection string.
+
 
 Register a server providing a service
 =====================================
@@ -182,7 +183,7 @@ Getting property data without tracking changes
 
 
 Sometimes, you want to get service data, but don't want to watch for
-changes. If you pass ``watch=False`` to ``properties``, Then properies
+changes. If you pass ``watch=False`` to ``properties``, Then properties
 won't track changes.  In this case, you can't set callback functions,
 but you can still update data.
 
@@ -716,8 +717,8 @@ empty function that can be replaced by applications.
 ZooKeeper Session Management
 ============================
 
-Kazoo takes care of reestablishing ZooKeeper sessions. Watches creates
-with the ``children`` and ``properties`` methods are restablished when
+Kazoo takes care of reestablishing ZooKeeper sessions. Watches created
+with the ``children`` and ``properties`` methods are reestablished when
 new sessions are established.  ``zc.zk`` also recreates ephemeral
 nodes created via ``register``.
 
