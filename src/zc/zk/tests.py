@@ -467,7 +467,7 @@ def test_ln_target_w_trailing_slash():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
     >>> zk.ln('/databases/main', '/fooservice/')
-    >>> pprint(zk.get_raw_properties('/fooservice'))
+    >>> pprint(zk.get_properties('/fooservice'))
     {u' ->': u'/databases/main',
      u'database': u'/databases/foomain',
      u'favorite_color': u'red',
@@ -1084,6 +1084,14 @@ def test_register_server():
       /providers
       /test:1
         pid = 65825
+    >>> zk.close()
+    """
+
+def no_error_calling_close_more_than_once():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.close()
+    >>> zk.close()
     >>> zk.close()
     """
 

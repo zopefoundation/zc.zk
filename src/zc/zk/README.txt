@@ -65,7 +65,7 @@ a service path and the address a server is listing on::
 .. test
 
    >>> import os
-   >>> zk.get_raw_properties('/fooservice/providers/192.168.0.42:8080'
+   >>> zk.get_properties('/fooservice/providers/192.168.0.42:8080'
    ...                   ) == dict(pid=os.getpid())
    True
 
@@ -557,7 +557,7 @@ Next, we'll create a symbolic link at the old location. We can use the
 ``ln`` convenience method::
 
     >>> zk.ln('/databases/cms', '/cms/databases/main')
-    >>> zk.get_raw_properties('/cms/databases')
+    >>> zk.get_properties('/cms/databases')
     {u'main ->': u'/databases/cms'}
 
 Now, we can remove ``/cms/databases/main`` and ``main_children`` will
@@ -1249,6 +1249,18 @@ more, use the help function::
 
 Change History
 ==============
+
+2.0.0a3 (2014-01-08)
+--------------------
+
+- Renamed ``get_raw_properties`` back to ``get_properties``, for
+  backward compatibility, now that we've decided not to have a
+  separate package.
+
+- Added ``ensure_path`` to the testing client.
+
+- Updated the ``ZooKeeper.close`` method to allow multiple calls.
+  (Calls after the first have no effect.)
 
 2.0.0a2 (2014-01-06)
 --------------------

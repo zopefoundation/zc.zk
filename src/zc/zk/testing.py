@@ -243,6 +243,9 @@ class Client:
         ):
         return self.zookeeper.create(self.handle, path, value, acl, ephemeral)
 
+    def ensure_path(self, path, acl=zc.zk.OPEN_ACL_UNSAFE):
+        return self.zookeeper.ensure_path(self.handle, path, acl)
+
     def delete(self, path):
         return self.zookeeper.delete(self.handle, path)
 
@@ -262,6 +265,7 @@ class Client:
 
     def close(self):
         del self.zookeeper
+        self.state = 'LOST'
 
     def lose_session(self, func=None):
         session = self.zookeeper.sessions[self.handle]
@@ -474,6 +478,29 @@ class ZooKeeper:
                 w.update(data)
             if ephemeral:
                 self.sessions[handle].add(path)
+            return path
+
+    def ensure_path(self, handle, path, acl):
+        while path.endswith('/'):
+            path = path[:-1]
+        if not path:
+            return True
+        if not path.startswith('/'):
+            path = '/' + path
+        base, name = path.rsplit('/', 1)
+        self.ensure_path(handle, base, acl)
+
+        with self.lock:
+            self._check_handle(handle)
+            node = self._traverse(base or '/')
+            if name in node.children:
+                return True
+            node.children[name] = newnode = Node('')
+            newnode.acl = acl
+            newnode.ephemeral = False
+            node.children_changed(self.sessions)
+            for h, w in self.watchers.get(path, ()):
+                w.update('')
             return path
 
     def _delete(self, handle, path, version=-1, clear=False):

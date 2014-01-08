@@ -98,7 +98,7 @@ class Resolving:
             newpath = base + '/' + name
             if self.exists(newpath):
                 return newpath
-            props = self.get_raw_properties(base)
+            props = self.get_properties(base)
             newpath = props.get(name+' ->')
             if not newpath:
                 raise kazoo.exceptions.NoNodeError(newpath)
@@ -153,7 +153,7 @@ class ZooKeeper(Resolving):
         else:
             client.start()
 
-    def get_raw_properties(self, path):
+    def get_properties(self, path):
         return decode(self.get(path)[0], path)
 
     def _findallipv4addrs(self, tail):
@@ -236,7 +236,7 @@ class ZooKeeper(Resolving):
             if self.exists(cpath):
                 if dry_run:
                     new = child.properties
-                    old = self.get_raw_properties(cpath)
+                    old = self.get_properties(cpath)
                     old = decode(self.get(cpath)[0])
                     for n, v in sorted(old.items()):
                         if n not in new:
@@ -362,6 +362,7 @@ class ZooKeeper(Resolving):
     def close(self):
         self.client.stop()
         self.client.close()
+        self.close = lambda : None
 
     def walk(self, path='/', ephemeral=True, children=False):
         try:
