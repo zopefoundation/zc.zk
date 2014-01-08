@@ -329,11 +329,11 @@ You can optionally see ephemeral nodes::
       threads = 3
       /providers
         /192.168.0.42:8080
-          pid = 81176
+          pid = 9999
         /192.168.0.42:8081
-          pid = 81176
+          pid = 9999
         /192.168.0.42:8082
-          pid = 81176
+          pid = 9999
 
 We can import a tree over an existing tree and changes will be
 applied.  Let's update our textual description::
@@ -750,11 +750,11 @@ ZooKeeper tree::
       threads = 3
       /providers
         /192.168.0.42:8080
-          pid = 7981
+          pid = 9999
         /192.168.0.42:8081
-          pid = 7981
+          pid = 9999
         /192.168.0.42:8082
-          pid = 7981
+          pid = 9999
 
 .. -> sh
 
@@ -839,7 +839,7 @@ In the file ``mytree.txt``, we can import the file like this::
         main -> /databases/cms
       /providers
         /1.2.3.4:5
-          pid = 4102
+          pid = 9999
     /databases
       /cms
         a = 1
@@ -848,11 +848,11 @@ In the file ``mytree.txt``, we can import the file like this::
       threads = 3
       /providers
         /192.168.0.42:8080
-          pid = 4102
+          pid = 9999
         /192.168.0.42:8081
-          pid = 4102
+          pid = 9999
         /192.168.0.42:8082
-          pid = 4102
+          pid = 9999
       /provision
         /node1
         /node2
@@ -919,11 +919,11 @@ properties::
       threads = 4
       /providers
         /192.168.0.42:8080
-          pid = 6894
+          pid = 9999
         /192.168.0.42:8081
-          pid = 6894
+          pid = 9999
         /192.168.0.42:8082
-          pid = 6894
+          pid = 9999
       /provision
         /node1
         /node2

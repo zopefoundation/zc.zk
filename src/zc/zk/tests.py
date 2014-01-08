@@ -513,7 +513,7 @@ def test_server_registeration_event():
     >>> zk.print_tree('/fooservice/providers')
     /providers
       /1.2.3.4:5678
-        pid = 1793
+        pid = 9999
         test = 1
 
     >>> zk.close()
@@ -530,7 +530,7 @@ def register_at_root():
     >>> zk.register('/', 'a:b')
     >>> zk.print_tree() # doctest: +ELLIPSIS
     /a:b
-      pid = 2318
+      pid = 9999
     /fooservice
     ...
     >>> zk.close()
@@ -807,7 +807,7 @@ def delete_recursive_force():
       threads = 1
       /providers
         /a:b
-          pid = 29093
+          pid = 9999
 
     >>> zk.delete_recursive('/fooservice', force=True)
 
@@ -887,7 +887,7 @@ def no_spam_when_not_trimming_ephemeral_nodes():
       threads = 1
       /providers
         /a:a
-          pid = 1234
+          pid = 9999
 
     >>> zk.import_tree('''
     ... /fooservice
@@ -951,13 +951,13 @@ def blank_host_netifaces_connected():
     >>> zk.print_tree('/fooservice/providers')
     /providers
       /192.168.24.60:8080
-        pid = 64501
+        pid = 9999
       /192.168.24.60:8081
-        pid = 64501
+        pid = 9999
       /192.168.24.61:8080
-        pid = 64501
+        pid = 9999
       /192.168.24.61:8081
-        pid = 64501
+        pid = 9999
 
     >>> zk.close()
     """
@@ -982,9 +982,9 @@ def blank_host_nonetifaces():
     >>> zk.print_tree('/fooservice/providers')
     /providers
       /service.example.com:8080
-        pid = 64527
+        pid = 9999
       /service.example.com:8081
-        pid = 64527
+        pid = 9999
 
     >>> zk.close()
     """
@@ -1083,7 +1083,7 @@ def test_register_server():
       threads = 1
       /providers
       /test:1
-        pid = 65825
+        pid = 9999
     >>> zk.close()
     """
 

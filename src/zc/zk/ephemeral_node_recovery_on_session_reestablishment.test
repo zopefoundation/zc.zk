@@ -47,7 +47,7 @@ Some custom data and acl:
         pid = 9999
       /test2
         a = 1
-        pid = 362
+        pid = 9999
 
     >>> zk.client.get_acls('/fooservice/providers/test2')[0] == acl
     True
