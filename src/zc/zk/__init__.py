@@ -23,45 +23,12 @@ import time
 import weakref
 import zc.zk.event
 import zc.thread
-import zookeeper
+import kazoo.client
+import kazoo.exceptions
+
+from kazoo.security import OPEN_ACL_UNSAFE, READ_ACL_UNSAFE
 
 logger = logging.getLogger(__name__)
-
-_logging_pipe = os.pipe()
-zookeeper.set_log_stream(os.fdopen(_logging_pipe[1], 'w'))
-
-@zc.thread.Thread
-def loggingthread():
-    r, w = _logging_pipe
-    log = logging.getLogger('ZooKeeper').log
-    f = os.fdopen(r)
-    levels = dict(ZOO_INFO = logging.INFO,
-                  ZOO_WARN = logging.WARNING,
-                  ZOO_ERROR = logging.ERROR,
-                  ZOO_DEBUG = logging.DEBUG,
-                  )
-    while 1:
-        line = f.readline().strip()
-        if not line:
-            continue
-        try:
-            if '@' in line:
-                level, message = line.split('@', 1)
-                level = levels.get(level.split(':')[-1])
-
-                if 'Exceeded deadline by' in line and level == logging.WARNING:
-                    level = logging.DEBUG
-
-            else:
-                level = None
-
-            if level is None:
-                log(logging.INFO, line)
-            else:
-                log(level, message)
-        except Exception, v:
-            logging.getLogger('ZooKeeper').exception("Logging error: %s", v)
-
 
 def parse_addr(addr):
     host, port = addr.split(':')
@@ -93,12 +60,6 @@ def decode(sdata, path='?'):
 def join(*args):
     return '/'.join(args)
 
-def world_permission(perms=zookeeper.PERM_READ):
-    return dict(perms=perms, scheme='world', id='anyone')
-
-OPEN_ACL_UNSAFE = [world_permission(zookeeper.PERM_ALL)]
-READ_ACL_UNSAFE = [world_permission()]
-
 class CancelWatch(Exception):
     pass
 
@@ -111,24 +72,21 @@ class FailedConnect(Exception):
 class BadPropertyLink(Exception):
     pass
 
+dot = re.compile(r"/\.(/|$)")
+dotdot = re.compile(r"/[^/]+/\.\.(/|$)")
 class Resolving:
 
     def resolve(self, path, seen=()):
-        if path.endswith('/.'):
-            return self.resolve(path[:-2])
-        if path.endswith('/..'):
-            base = self.resolve(path[:-3])
-            if '/' in base:
-                return base.rsplit('/', 1)[0]
-            else:
-                raise zookeeper.NoNodeException(path)
 
-        try:
-            if self.exists(path):
-                return path
-        except zookeeper.BadArgumentsException:
-            if not path[:1] == '/':
-                raise zookeeper.NoNodeException(path)
+        # normalize dots
+        while 1:
+            npath = dotdot.sub(r"\1", dot.sub(r"\1", path))
+            if npath == path:
+                break
+            path = npath
+
+        if self.exists(path):
+            return path
 
         if path in seen:
             seen += (path,)
@@ -143,73 +101,60 @@ class Resolving:
             props = self.get_properties(base)
             newpath = props.get(name+' ->')
             if not newpath:
-                raise zookeeper.NoNodeException()
+                raise kazoo.exceptions.NoNodeError(newpath)
 
             if not newpath[0] == '/':
                 newpath = base + '/' + newpath
 
             seen += (path,)
             return self.resolve(newpath, seen)
-        except zookeeper.NoNodeException:
-            raise zookeeper.NoNodeException(path)
+        except kazoo.exceptions.NoNodeError:
+            raise kazoo.exceptions.NoNodeError(path)
 
+aliases = 'exists', 'create', 'delete', 'get_children', 'get'
 
 class ZooKeeper(Resolving):
 
-    initial_connection_wait = 9.0
+    def __init__(
+        self,
+        connection_string="127.0.0.1:2181",
+        session_timeout=10.0,
+        ):
 
-    def __init__(self, connection_string="127.0.0.1:2181", session_timeout=None,
-                 wait=False):
-        self.watches = WatchManager()
-        self.ephemeral = {}
-        self.handle = None
-
-        connected = self.connected = threading.Event()
-        def watch_session(handle, event_type, state, path):
-            assert event_type == zookeeper.SESSION_EVENT
-            assert not path
-            if state == zookeeper.CONNECTED_STATE:
-                if self.handle is None:
-                    self.handle = handle
-                    for watch in self.watches.clear():
-                        self._watch(watch)
-                    for path, data in self.ephemeral.items():
-                        zookeeper.create(self.handle, path, data['data'],
-                                         data['acl'], data['flags'])
-                else:
-                    assert handle == self.handle
-                connected.set()
-                logger.info('connected %s', handle)
-            elif state == zookeeper.CONNECTING_STATE:
-                connected.clear()
-            elif state == zookeeper.EXPIRED_SESSION_STATE:
-                connected.clear()
-                if self.handle is not None:
-                    zookeeper.close(self.handle)
-                self.handle = None
-                init()
-            else:
-                logger.critical('unexpected session event %s %s', handle, state)
-
-        if session_timeout:
-            init = (lambda : zookeeper.init(connection_string, watch_session,
-                                            session_timeout)
-                    )
+        if isinstance(connection_string, basestring):
+            client = kazoo.client.KazooClient(
+                connection_string, session_timeout)
+            started = False
         else:
-            init = lambda : zookeeper.init(connection_string, watch_session)
+            client = connection_string
+            started = True
+            self.close = lambda : None
 
-        handle = init()
-        connected.wait(self.initial_connection_wait)
-        if not connected.is_set():
-            if wait:
-                while not connected.is_set():
-                    logger.critical("Can't connect to ZooKeeper at %r",
-                                    connection_string)
-                    connected.wait(1)
-            else:
-                zookeeper.close(handle)
-                raise FailedConnect(connection_string)
+        self.client = client
+        for alias in aliases:
+            setattr(self, alias, getattr(client, alias))
 
+        self.ephemeral = {}
+        self.state = None
+
+        def watch_session(state):
+            if state == kazoo.protocol.states.KazooState.CONNECTED:
+                if self.state == kazoo.protocol.states.KazooState.LOST:
+                    for path, data in self.ephemeral.items():
+                        self.create(
+                            path, data['data'], data['acl'], ephemeral=True)
+                logger.info('connected')
+            self.state = state
+
+        client.add_listener(watch_session)
+
+        if started:
+            watch_session(client.state)
+        else:
+            client.start()
+
+    def get_properties(self, path):
+        return decode(self.get(path)[0], path)
 
     def _findallipv4addrs(self, tail):
         try:
@@ -230,7 +175,7 @@ class ZooKeeper(Resolving):
 
         return addrs or loopaddrs
 
-    def register_server(self, path, addr, acl=READ_ACL_UNSAFE, **kw):
+    def register(self, path, addr, acl=READ_ACL_UNSAFE, **kw):
         kw['pid'] = os.getpid()
 
         if not isinstance(addr, str):
@@ -247,160 +192,24 @@ class ZooKeeper(Resolving):
             path += '/'
 
         for addr in addrs:
-            self.create(path + addr, encode(kw), acl, zookeeper.EPHEMERAL)
+            data = encode(kw)
+            apath = path + addr
+            self.create(apath, data, acl, ephemeral=True)
+            self.ephemeral[apath] = dict(data=data, acl=acl)
 
-    test_sleep = 0
-    def _async(self, completion, meth, *args):
-        post = getattr(self, '_post_'+meth)
-        if completion is None:
-            result = getattr(zookeeper, meth)(self.handle, *args)
-            post(*args)
-            if self.test_sleep:
-                time.sleep(self.test_sleep)
-            return result
+    register_server = register # backward compatibility
 
-        def asynccb(handle, status, *cargs):
-            assert handle == self.handle
-            if status == 0:
-                post(*args)
-            completion(handle, status, *cargs)
-
-        return getattr(zookeeper, 'a'+meth)(self.handle, *(args+(asynccb,)))
-
-    def create(self, path, data, acl, flags=0, completion=None):
-        return self._async(completion, 'create', path, data, acl, flags)
-    acreate = create
-
-    def _post_create(self, path, data, acl, flags):
-        if (flags & zookeeper.EPHEMERAL) and not (flags & zookeeper.SEQUENCE):
-            self.ephemeral[path] = dict(data=data, acl=acl, flags=flags)
-
-    def delete(self, path, version=-1, completion=None):
-        return self._async(completion, 'delete', path, version)
-    adelete = delete
-
-    def _post_delete(self, path, version):
-        self.ephemeral.pop(path, None)
-
-    def set(self, path, data, version=-1, completion=None):
-        return self._async(completion, 'set', path, data, version)
-    aset = set2 = set
-
-    def _post_set(self, path, data, version):
+    def set(self, path, data, *a, **k):
+        r = self.client.set(path, data, *a, **k)
         if path in self.ephemeral:
             self.ephemeral[path]['data'] = data
-
-    def set_acl(self, path, version, acl, completion=None):
-        return self._async(completion, 'set_acl', path, version, acl)
-    aset_acl = set_acl
-
-    def _post_set_acl(self, path, version, acl):
-        if path in self.ephemeral:
-            self.ephemeral[path]['acl'] = acl
-
-    def _watch(self, watch):
-        event_type = watch.event_type
-        watch.real_path = real_path = self.resolve(watch.path)
-        key = event_type, real_path
-        if self.watches.add(key, watch):
-            try:
-                self._watchkey(key)
-            except zookeeper.ConnectionLossException:
-                # We lost a race here. We got disconnected between
-                # when we resolved the watch path and the time we set
-                # the watch. This is very unlikely.
-                watches = set(self.watches.pop(key))
-                for w in watches:
-                    w._deleted()
-                if watch in watches:
-                    watches.remove(watch)
-                if watches:
-                    # OMG, how unlucky can we be?
-                    # someone added a watch between the time we added
-                    # the key and failed to add the watch in zookeeper.
-                    logger.critical('lost watches %r', watches)
-                raise
-        else:
-            # We already had a watch for the key.  We need to pass this one
-            # it's data.
-            zkfunc = getattr(zookeeper, self.__zkfuncs[event_type])
-            watch._notify(zkfunc(self.handle, real_path))
-
-    __zkfuncs = {
-        zookeeper.CHANGED_EVENT: 'get',
-        zookeeper.CHILD_EVENT: 'get_children',
-        }
-    def _watchkey(self, key):
-        event_type, real_path = key
-        zkfunc = getattr(zookeeper, self.__zkfuncs[event_type])
-
-        def handler(h, t, state, p, reraise=False):
-
-            if t == zookeeper.SESSION_EVENT:
-                return
-
-            if state != zookeeper.CONNECTED_STATE:
-                # This can happen if we get disconnected or a session expires.
-                # When we reconnect, we should restablish the watchers.
-                logger.warning(
-                    "Node watcher event %r with non-connected state, %r",
-                    t, state)
-                return
-
-            try:
-                assert h == self.handle
-                assert state == zookeeper.CONNECTED_STATE
-                assert p == real_path
-                if key not in self.watches:
-                    return
-
-                if t == zookeeper.DELETED_EVENT:
-                    self._rewatch(key)
-                else:
-                    assert t == event_type
-                    try:
-                        v = zkfunc(self.handle, real_path, handler)
-                    except zookeeper.NoNodeException:
-                        self._rewatch(key)
-                    else:
-                        for watch in self.watches.watches(key):
-                            watch._notify(v)
-            except:
-                logger.exception("%s(%s) handler failed",
-                                 self.__zkfuncs[event_type], real_path)
-                if reraise:
-                    raise
-
-        handler(self.handle, event_type, self.state, real_path, True)
-
-    def _rewatch(self, key):
-        event_type = key[0]
-        for watch in self.watches.pop(key):
-            try:
-                real_path = self.resolve(watch.path)
-            except (zookeeper.NoNodeException, LinkLoop):
-                logger.exception("%s path went away", watch)
-                watch._deleted()
-            else:
-                self._watch(watch)
+        return r
 
     def children(self, path):
         return Children(self, path)
 
-    def create_recursive(self, path, data, acl):
-        if self.exists(path):
-            return
-        base, name = path.rsplit('/', 1)
-        if base:
-            self.create_recursive(base, data, acl)
-        if not self.exists(path):
-            self.create(path, data, acl)
-
-    def get_properties(self, path):
-        return decode(self.get(path)[0])
-
-    def properties(self, path):
-        return Properties(self, path)
+    def properties(self, path, watch=True):
+        return Properties(self, path, watch)
 
     def import_tree(self, text, path='/', trim=None, acl=OPEN_ACL_UNSAFE,
                     dry_run=False):
@@ -452,9 +261,9 @@ class ZooKeeper(Resolving):
                                     cpath, n, v)
                 else:
                     self.set(cpath, data)
-                    meta, oldacl = self.get_acl(cpath)
+                    oldacl, meta = self.client.get_acls(cpath)
                     if acl != oldacl:
-                        self.set_acl(cpath, meta['aversion'], acl)
+                        self.client.set_acls(cpath, meta.aversion, acl)
             else:
                 if dry_run:
                     print 'add', cpath
@@ -497,7 +306,7 @@ class ZooKeeper(Resolving):
         return ephemeral
 
     def is_ephemeral(self, path):
-        return bool(self.get(path)[1]['ephemeralOwner'])
+        return bool(self.get(path)[1].ephemeralOwner)
 
     def export_tree(self, path='/', ephemeral=False, name=None):
         output = []
@@ -514,7 +323,7 @@ class ZooKeeper(Resolving):
                     indent += '  '
             else:
                 data, meta = self.get(path)
-                if meta['ephemeralOwner'] and not ephemeral:
+                if meta.ephemeralOwner and not ephemeral:
                     return
                 if name is None:
                     name = path.rsplit('/', 1)[1]
@@ -542,30 +351,22 @@ class ZooKeeper(Resolving):
     def print_tree(self, path='/'):
         print self.export_tree(path, True),
 
-    def _set(self, path, data):
-        return self.set(path, data)
-
     def ln(self, target, source):
         base, name = source.rsplit('/', 1)
         if target[-1] == '/':
             target += name
-        properties = self.get_properties(base)
+        properties = decode(self.get(base)[0])
         properties[name+' ->'] = target
-        self._set(base, encode(properties))
+        self.set(base, encode(properties))
 
     def close(self):
-        zookeeper.close(self.handle)
-        self.handle = None
-
-    @property
-    def state(self):
-        if self.handle is None:
-            return zookeeper.CONNECTING_STATE
-        return zookeeper.state(self.handle)
+        self.client.stop()
+        self.client.close()
+        self.close = lambda : None
 
     def walk(self, path='/', ephemeral=True, children=False):
         try:
-            if not ephemeral and self.get(path)[1]['ephemeralOwner']:
+            if not ephemeral and self.get(path)[1].ephemeralOwner:
                 return
 
             _children = sorted(self.get_children(path))
@@ -573,7 +374,7 @@ class ZooKeeper(Resolving):
                 yield path, _children
             else:
                 yield path
-        except zookeeper.NoNodeException:
+        except kazoo.exceptions.NoNodeError:
             return
 
         for name in _children:
@@ -582,104 +383,66 @@ class ZooKeeper(Resolving):
             for p in self.walk(path+name):
                 yield p
 
-
-def _make_method(name):
-    return (lambda self, *a, **kw:
-            getattr(zookeeper, name)(self.handle, *a, **kw))
-
-for name in (
-    'add_auth', 'aexists', 'aget', 'aget_acl',
-    'aget_children', 'async', 'client_id',
-    'exists', 'get', 'get_acl',
-    'get_children', 'is_unrecoverable', 'recv_timeout',
-    ):
-    setattr(ZooKeeper, name, _make_method(name))
-
-del _make_method
-
-class WatchManager:
-    # Manage {key -> w{watches}} in a thread-safe manner.
-    # (And also provide a hard set to allow nodeinfos w callbacks
-    #  to keep themselves around.)
-
-    def __init__(self):
-        self.data = {}
-        self.lock = threading.Lock()
-
-        def _remove(ref, selfref=weakref.ref(self)):
-            self = selfref()
-            if self is None:
-                return
-            key = ref.key
-            with self.lock:
-                refs = self.data.get(key, ())
-                if ref in refs:
-                    refs.remove(ref)
-                    if not refs:
-                        del self.data[key]
-
-        self._remove = _remove
-
-    def __len__(self):
-        with self.lock:
-            return sum(
-                len([r for r in refs if r() is not None])
-                for refs in self.data.itervalues()
-                )
-
-    def __contains__(self, key):
-        with self.lock:
-            return key in self.data
-
-    def add(self, key, value):
-        ref = weakref.KeyedRef(value, self._remove, key)
-        newkey = False
-        with self.lock:
-            try:
-                refs = self.data[key]
-            except KeyError:
-                self.data[key] = refs = set()
-                newkey = True
-            refs.add(ref)
-        return newkey
-
-    def pop(self, key):
-        with self.lock:
-            watches = [ref() for ref in self.data.pop(key, ())]
-
-        for watch in watches:
-            if watch is not None:
-                yield watch
-
-    def watches(self, key):
-        with self.lock:
-            watches = [ref() for ref in self.data.get(key, ())]
-
-        for watch in watches:
-            if watch is not None:
-                yield watch
-
-    def clear(self):
-        # Clear data and return an iterator on the old values
-        with self.lock:
-            old = self.data
-            self.data = {}
-
-        for refs in old.itervalues():
-            for ref in refs:
-                v = ref()
-                if v is not None:
-                    yield v
-
 ZK = ZooKeeper
 
-class NodeInfo:
+class KazooWatch:
 
-    def __init__(self, session, path):
-        self.session = session
+    def __init__(self, client, children, path, watch):
+        self.watch_ref = weakref.ref(watch)
+        if children:
+            client.ChildrenWatch(path)(self.handle)
+
+            # Add a data watch so we know when a node is deleted.
+            @client.DataWatch(path)
+            def handle(data, *_):
+                if data is None:
+                    self.handle(data)
+        else:
+            client.DataWatch(path)(self.handle)
+
+    def handle(self, data, *rest):
+        watch = self.watch_ref()
+        if watch is None:
+            return False
+        watch.handle(data, *rest)
+        if data is None:
+            return False
+
+class Watch:
+    # Base class for child and data watchers
+
+    def __init__(self, zk, path, watch=True):
+        self.zk = zk
         self.path = path
+        self.watch = watch
         self.callbacks = []
-        session._watch(self)
+        self.register(True)
+
+    def register(self, reraise):
+        try:
+            real_path = self.zk.resolve(self.path)
+        except Exception:
+            if reraise:
+                raise
+            else:
+                self._deleted()
+        else:
+            self.real_path = real_path
+            if self.watch:
+                KazooWatch(self.zk.client, self.children, real_path, self)
+            else:
+                if self.children:
+                    self.setData(self.zk.get_children(real_path))
+                else:
+                    self.setData(self.zk.get(real_path)[0])
+
+    def handle(self, data, *rest):
+        if data is None:
+            # The watched node was deleted.
+            # Try to re-resolve the watch path.
+            self.register(False)
+        else:
+            self._notify(data)
 
     def setData(self, data):
         self.data = data
@@ -697,10 +460,10 @@ class NodeInfo:
                 logger.exception('Error %r calling %r', self, callback)
 
     def __repr__(self):
-        return "%s%s.%s(%s, %s)" % (
+        return "%s%s.%s(%s)" % (
             self.deleted and 'DELETED: ' or '',
             self.__class__.__module__, self.__class__.__name__,
-            self.session.handle, self.path)
+            self.path)
 
     def _notify(self, data):
         if data is not None:
@@ -716,6 +479,8 @@ class NodeInfo:
                     logger.exception("watch(%r, %r)", self, callback)
 
     def __call__(self, func):
+        if not self.watch:
+            raise TypeError("Can't set callbacks without watching.")
         func(self)
         self.callbacks.append(func)
         return self
@@ -723,80 +488,87 @@ class NodeInfo:
     def __iter__(self):
         return iter(self.data)
 
-class Children(NodeInfo):
+class Children(Watch):
 
-    event_type = zookeeper.CHILD_EVENT
+    children = True
 
     def __len__(self):
         return len(self.data)
 
-class Properties(NodeInfo, collections.Mapping):
+class Properties(Watch, collections.Mapping):
 
-    event_type = zookeeper.CHANGED_EVENT
+    children = False
 
-    def __init__(self, *args):
-        self._linked_properties = {}
-        NodeInfo.__init__(self, *args)
+    def __init__(self, zk, path, watch=True, _linked_properties=None):
+        if _linked_properties is None:
+             # {prop_link_path -> Properties}
+            _linked_properties = {}
+        self._linked_properties = _linked_properties
+        Watch.__init__(self, zk, path, watch)
 
     def _setData(self, data, handle_errors=False):
         # Save a mapping as our data.
         # Set up watchers for any property links.
-        _linked_properties = {}
-        for name in data:
-            if name.endswith(' =>') and name[:-3] not in data:
-                link = data[name].strip().split()
-                try:
-                    if not (1 <= len(link) <= 2):
-                        raise ValueError('Bad link data')
-                    path = link.pop(0)
-                    if path[0] != '/':
-                        path = self.path + '/' + path
-                    path = self.session.resolve(path)
-                    properties = self._setup_link(path, _linked_properties)
-                    properties[link and link[0] or name[:-3]]
-                except Exception, v:
-                    if handle_errors:
-                        logger.exception(
-                            'Bad property link %r %r', name, data[name])
-                    else:
-                        raise ValueError("Bad property link",
-                                         name, data[name], v)
-
-        # Only after processing all links, do we update instance attrs:
+        old = getattr(self, 'data', None)
         self.data = data
-        self._linked_properties = _linked_properties
+        try:
+            for name in data:
+                if name.endswith(' =>') and name[:-3] not in data:
+                    link = data[name].strip().split()
+                    try:
+                        if not (1 <= len(link) <= 2):
+                            raise ValueError('Bad link data')
+                        path = link.pop(0)
+                        if path[0] != '/':
+                            path = self.path + '/' + path
 
-    def _setup_link(self, path, _linked_properties=None):
-        if _linked_properties is None:
-            _linked_properties = self._linked_properties
+                        # TODO: why resolve here? Why not store the original
+                        # path in the linked properties.
+                        path = self.zk.resolve(path)
+                        properties = self._setup_link(path)
+                        properties[link and link[0] or name[:-3]]
+                    except Exception, v:
+                        if handle_errors:
+                            logger.exception(
+                                'Bad property link %r %r', name, data[name])
+                        else:
+                            raise ValueError("Bad property link",
+                                             name, data[name], v)
+        except:
+            self.data = old # rollback
+            raise
 
-        props = _linked_properties.get(path, self)
-        if props is not self:
+    def _setup_link(self, path):
+        _linked_properties = self._linked_properties
+        props = _linked_properties.get(path)
+        if props is not None:
             return props
 
-        props = self.session.properties(path)
+        _linked_properties[self.real_path] = self
+        props = Properties(self.zk, path, self.watch, _linked_properties)
 
         _linked_properties[path] = props
 
-        def notify(properties=None):
-            if properties is None:
-                # A node we were watching was deleted.  We shuld try to
-                # re-resolve it. This doesn't happen often, let's just reset
-                # everything.
-                self._setData(self.data)
-            elif self._linked_properties.get(path) is properties:
-                self._notify(None)
-            else:
-                # We must not care about it anymore.
-                raise CancelWatch()
+        if self.watch:
+            @props.callbacks.append
+            def notify(properties=None):
+                if properties is None:
+                    # A node we were watching was deleted.  We should
+                    # try to re-resolve it. This doesn't happen often,
+                    # let's just reset everything.
+                    self._setData(self.data, True)
+                elif self._linked_properties.get(path) is properties:
+                    # Notify our subscribers that there was a change
+                    # that might effect them. (But don't update our data.)
+                    self._notify(None)
+                else:
+                    # We must not care about it anymore.
+                    raise CancelWatch()
 
-        props.callbacks.append(notify)
         return props
 
     def setData(self, data):
-        # Called by upstream watchers.
-        sdata, self.meta_data = data
-        self._setData(decode(sdata, self.path), True)
+        self._setData(decode(data, self.path), True)
 
     def __getitem__(self, key, seen=()):
         try:
@@ -813,7 +585,7 @@ class Properties(NodeInfo, collections.Mapping):
                 if not path[0] == '/':
                     path = self.path + '/' + path
 
-                path = self.session.resolve(path)
+                path = self.zk.resolve(path)
                 if path in seen:
                     raise LinkLoop(seen+(path,))
                 seen += (path,)
@@ -844,8 +616,9 @@ class Properties(NodeInfo, collections.Mapping):
         return self.data.copy()
 
     def _set(self, data):
+        self._linked_properties = {}
         self._setData(data)
-        self.session._set(self.path, encode(data))
+        self.zk.set(self.path, encode(data))
 
     def set(self, data=None, **properties):
         data = data and dict(data) or {}
@@ -858,6 +631,9 @@ class Properties(NodeInfo, collections.Mapping):
             d.update(data)
         d.update(properties)
         self._set(d)
+
+    def __setitem__(self, key, value):
+        self.update({key: value})
 
     def __hash__(self):
         # Gaaaa, collections.Mapping

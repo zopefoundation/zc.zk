@@ -1,22 +1,33 @@
-========================
-High-level ZooKeeper API
-========================
+=================================================
+Service registration and discovery with ZooKeeper
+=================================================
 
-The zc.zk package provides some high-level interfaces to the low-level
-zookeeper extension.  It's not complete, in that it doesn't try, at
-this time, to be a complete high-level interface. Rather, it provides
-facilities we need to use ZooKeeper to connect services:
+The zc.zk package provides support for registering and discovering
+services with ZooKeeper. It also provides support for defining
+services with a tree-based model and syncing the model with ZooKeeper.
 
-- ZODB database clients and servers
-- HTTP-based clients and services
-- Load balancers and HTTP application servers
-
-The current (initial) use cases are:
+The use cases are:
 
 - Register a server providing a service.
 - Get the addresses of servers providing a service.
 - Get and set service configuration data.
 - Model system architecture as a tree.
+
+Important note for zc.zk 1.x users
+  Version 2 is mostly. but not entirely backward compatible.
+
+  Although the goal of version 1 was primarily service registration
+  and discovery, it also provided a high-level ZooKeeper API.  `Kazoo
+  <https://pypi.python.org/pypi/kazoo/>`_ is a much better high-level
+  interface for ZooKeeper because:
+
+  - It isn't based on the buggy ZooKeeper C interface and Python
+    extension.
+
+  - It doesn't assumne that ephemeral nodes should be reestablished
+    when a session expires and is recreated.
+
+  zc.zk 2 uses Kazoo.
 
 This package makes no effort to support Windows.  (Patches to support
 Windows might be accepted if they don't add much complexity.)
@@ -26,14 +37,8 @@ Windows might be accepted if they don't add much complexity.)
 Installation
 ============
 
-You can install this as you would any other distribution. Note,
-however, that you must also install the Python ZooKeeper binding
-provided with ZooKeeper.  Because this binding is packaged a number of
-different ways, it isn't listed as a distribution requirement.
-
-An easy way to get the Python zookeeper binding is by installing
-``zc-zookeeper-static``, which is a self-contained statically built
-distribution.
+You can install this as you would any other distribution.
+It requires the kazoo Python ZooKeeper interface.
 
 Instantiating a ZooKeeper helper
 ================================
@@ -47,13 +52,16 @@ The ZooKeeper constructor takes a ZooKeeper connection string, which is a
 comma-separated list of addresses of the form *HOST:PORT*.  It defaults
 to ``'127.0.0.1:2181'``, which is convenient during development.
 
+You can also pass a kazoo client object, instead of a connection string.
+
+
 Register a server providing a service
 =====================================
 
-To register a server, use the ``register_server`` method, which takes
+To register a server, use the ``register`` method, which takes
 a service path and the address a server is listing on::
 
-    >>> zk.register_server('/fooservice/providers', ('192.168.0.42', 8080))
+    >>> zk.register('/fooservice/providers', ('192.168.0.42', 8080))
 
 .. test
 
@@ -63,7 +71,7 @@ a service path and the address a server is listing on::
    True
 
 
-``register_server`` creates a read-only ephemeral ZooKeeper node as a
+``register`` creates a read-only ephemeral ZooKeeper node as a
 child of the given service path.  The name of the new node is (a
 string representation of) the given address. This allows clients to
 get the list of addresses by just getting the list of the names of
@@ -74,7 +82,7 @@ removed when a ZooKeeper session is closed or when the process
 containing it dies.  De-registration is automatic.
 
 When registering a server, you can optionally provide server (node)
-data as additional keyword arguments to register_server.  By default,
+data as additional keyword arguments to register.  By default,
 the process id is set as the ``pid`` property.  This is useful to
 tracking down the server process.  In addition, an event is generated,
 providing subscribers to add properties as a server is being
@@ -94,7 +102,7 @@ The ``children`` method returns an iterable of names of child nodes of
 the node specified by the given path.  The iterable is automatically
 updated when new providers are registered::
 
-    >>> zk.register_server('/fooservice/providers', ('192.168.0.42', 8081))
+    >>> zk.register('/fooservice/providers', ('192.168.0.42', 8081))
     >>> sorted(addresses)
     ['192.168.0.42:8080', '192.168.0.42:8081']
 
@@ -116,7 +124,7 @@ whenever the list of children changes::
 The callback is called immediately with the children.  When we add
 another child, it'll be called again::
 
-    >>> zk.register_server('/fooservice/providers', ('192.168.0.42', 8082))
+    >>> zk.register('/fooservice/providers', ('192.168.0.42', 8082))
     addresses changed
     ['192.168.0.42:8080', '192.168.0.42:8081', '192.168.0.42:8082']
 
@@ -156,8 +164,7 @@ updated.
 Updating node properties
 ========================
 
-You can't set properties, but you can update properties by calling the
-``update`` method::
+You can update properties by calling the ``update`` method::
 
     >>> thread_info = {'threads': 2}
     >>> data.update(thread_info, secret='123')
@@ -167,7 +174,16 @@ You can't set properties, but you can update properties by calling the
     secret: u'123'
     threads: 2
 
-or by calling the ``set`` method, which removes keys not listed::
+You can also set individual properties:
+
+    >>> data['threads'] = 1
+    data updated
+    database: u'/databases/foomain'
+    favorite_color: u'red'
+    secret: u'123'
+    threads: 1
+
+If you call the ``set`` method, keys not listed are removed:
 
     >>> data.set(threads= 3, secret='1234')
     data updated
@@ -177,6 +193,34 @@ or by calling the ``set`` method, which removes keys not listed::
 Both ``update`` and ``set`` can take data from a positional data argument, or
 from keyword parameters.  Keyword parameters take precedent over the
 positional data argument.
+
+Getting property data without tracking changes
+==============================================
+
+
+Sometimes, you want to get service data, but don't want to watch for
+changes. If you pass ``watch=False`` to ``properties``, Then properties
+won't track changes.  In this case, you can't set callback functions,
+but you can still update data.
+
+.. test
+
+    >>> p2 = zk.properties('/fooservice', watch=False)
+    >>> sorted(p2)
+    ['secret', 'threads']
+    >>> p2(lambda data: None)
+    Traceback (most recent call last):
+    ...
+    TypeError: Can't set callbacks without watching.
+
+    >>> p2['threads'] = 2 # doctest: +ELLIPSIS
+    data updated
+    ...
+    threads: 2
+    >>> p2.update(threads=3) # doctest: +ELLIPSIS
+    data updated
+    ...
+    threads: 3
 
 Tree-definition format, import, and export
 ==========================================
@@ -285,11 +329,11 @@ You can optionally see ephemeral nodes::
       threads = 3
       /providers
         /192.168.0.42:8080
-          pid = 81176
+          pid = 9999
         /192.168.0.42:8081
-          pid = 81176
+          pid = 9999
         /192.168.0.42:8082
-          pid = 81176
+          pid = 9999
 
 We can import a tree over an existing tree and changes will be
 applied.  Let's update our textual description::
@@ -454,7 +498,7 @@ The ``resolve`` method is used to resolve a path to a real path::
 In this example, the link was at the endpoint of the virtual path, but
 it could be anywhere::
 
-    >>> zk.register_server('/cms/providers', '1.2.3.4:5')
+    >>> zk.register('/cms/providers', '1.2.3.4:5')
     >>> zk.resolve('/lb/pools/cms/providers/1.2.3.4:5')
     u'/cms/providers/1.2.3.4:5'
 
@@ -462,7 +506,7 @@ Note a limitation of symbolic links is that they can be hidden by
 children.  For example, if we added a real node, at
 ``/lb/pools/cms/provioders``, it would shadow the link.
 
-``children``, ``properties``, and ``register_server`` will
+``children``, ``properties``, and ``register`` will
 automatically use ``resolve`` to resolve paths.
 
 When the ``children`` and ``properties`` are used for a node, the
@@ -499,7 +543,7 @@ the exported tree.
 
 Now, we'll create a databases node::
 
-    >>> zk.create('/databases', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> zk.create('/databases')
     '/databases'
 
 And import the export::
@@ -538,8 +582,7 @@ updates::
 
     >>> sorted(main_children)
     ['providers']
-    >>> zk.delete('/databases/cms/providers')
-    0
+    >>> _ = zk.delete('/databases/cms/providers')
     >>> sorted(main_children)
     []
 
@@ -662,17 +705,22 @@ Registering a server with a blank hostname
 
 It's common to use an empty string for a host name when calling bind
 to listen on all IPv4 interfaces.  If you pass an address with an
-empty host to ``register_server`` and `netifaces
+empty host to ``register`` and `netifaces
 <http://alastairs-place.net/projects/netifaces/>`_ is installed, then
-all of the IPv4 addresses [#ifaces]_ (for the given port) will be
-registered.  If netifaces isn't installed and you pass an empty host
+all of the non-local IPv4 addresses [#ifaces]_ (for the given port) will be
+registered.
+
+If there are no non-local interfaces (not connected to network), then
+the local IPV4 interface will be registered.
+
+If netifaces isn't installed and you pass an empty host
 name, then the fully-qualified domain name, as returned by
 ``socket.getfqdn()`` will be used for the host.
 
 Server-registration events
 ==========================
 
-When ``register_server`` is called, a ``zc.zk.RegisteringServer``
+When ``register`` is called, a ``zc.zk.RegisteringServer``
 event is emmitted with a properties attribute that can be updated by
 subscribers prior to creating the ZooKeeper ephemeral node.  This
 allows third-party code to record extra server information.
@@ -685,23 +733,10 @@ empty function that can be replaced by applications.
 ZooKeeper Session Management
 ============================
 
-``zc.zk`` takes care of ZooKeeper session management for you. It
-establishes and, if necessary, reestablishes sessions for you.  In
-particular, it takes care of reestablishing ZooKeeper watches and
-ephemeral nodes when a session is reestablished.
-
-Note
-  To reestablish ephemeral nodes, it's necessary for ``zc.zk`` to
-  track node-moderation operations, so you have to access the
-  ZooKeeper APIs through the `zc.zk.ZooKeeper`_ object, rather than
-  using the low-level extension directly.
-
-ZooKeeper logging
-=================
-
-``zc.zk`` bridges the low-level ZooKeeper logging API and the Python
-logging API.  ZooKeeper log messages are forwarded to the Python
-``'ZooKeeper'`` logger.
+Kazoo takes care of reestablishing ZooKeeper sessions. Watches created
+with the ``children`` and ``properties`` methods are reestablished when
+new sessions are established.  ``zc.zk`` also recreates ephemeral
+nodes created via ``register``.
 
 zookeeper_export script
 =======================
@@ -715,11 +750,11 @@ ZooKeeper tree::
       threads = 3
       /providers
         /192.168.0.42:8080
-          pid = 7981
+          pid = 9999
         /192.168.0.42:8081
-          pid = 7981
+          pid = 9999
         /192.168.0.42:8082
-          pid = 7981
+          pid = 9999
 
 .. -> sh
 
@@ -804,7 +839,7 @@ In the file ``mytree.txt``, we can import the file like this::
         main -> /databases/cms
       /providers
         /1.2.3.4:5
-          pid = 4102
+          pid = 9999
     /databases
       /cms
         a = 1
@@ -813,11 +848,11 @@ In the file ``mytree.txt``, we can import the file like this::
       threads = 3
       /providers
         /192.168.0.42:8080
-          pid = 4102
+          pid = 9999
         /192.168.0.42:8081
-          pid = 4102
+          pid = 9999
         /192.168.0.42:8082
-          pid = 4102
+          pid = 9999
       /provision
         /node1
         /node2
@@ -884,11 +919,11 @@ properties::
       threads = 4
       /providers
         /192.168.0.42:8080
-          pid = 6894
+          pid = 9999
         /192.168.0.42:8081
-          pid = 6894
+          pid = 9999
         /192.168.0.42:8082
-          pid = 6894
+          pid = 9999
       /provision
         /node1
         /node2
@@ -1032,10 +1067,6 @@ zc.zk.ZooKeeper
    them up when they are no-longer used.  If you only want to get the
    list of children once, use ``get_children``.
 
-``create_recursive(path, data, acl)``
-   Create a non-ephemeral node at the given path, creating parent
-   nodes if necessary.
-
 ``close()``
     Close the ZooKeeper session.
 
@@ -1079,23 +1110,6 @@ zc.zk.ZooKeeper
        Normally, when exporting the root node, ``/``, the root isn't
        included, but it is included if a name is given.
 
-``get_children(path)``
-   Get a list of the names of the children the node at the given path.
-
-   This is more efficient than ``children`` when all you need is to
-   read the list once, as it doesn't create a `zc.zk.Children`_
-   object.
-
-``get_properties(path)``
-   Get the raw properties for the node at the given path as a dictionary.
-
-   This method is mainly for internal use.  Because it doesn't resolve
-   property links, it's of dubious use for applications.
-
-   (It's only included in the documentation because it was included
-    before with a suggestion that it was more efficient than
-    ``properties``, which it is if you just want raw data.)
-
 ``import_tree(text[, path='/'[, trim[, acl[, dry_run]]]])``
     Create tree nodes by importing a textual tree representation.
 
@@ -1134,15 +1148,15 @@ zc.zk.ZooKeeper
 
      print zk.export_tree(path, ephemeral=True),
 
-``properties(path)``
+``properties(path, watch=True)``
    Return a `zc.zk.Properties`_ for the path.
 
    Note that there is a fair bit of machinery in `zc.zk.Properties`_
    objects to support keeping them up to date, callbacks, and cleaning
-   them up when they are no-longer used.  If you only want to get the
-   properties once, use ``get_properties``.
+   them up when they are no-longer used.  If you don't want to track
+   changes, pass ``watch=False``.
 
-``register_server(path, address, acl=zc.zk.READ_ACL_UNSAFE, **data)``
+``register(path, address, acl=zc.zk.READ_ACL_UNSAFE, **data)``
     Register a server at a path with the address.
 
     An ephemeral child node of ``path`` will be created with name equal
@@ -1160,14 +1174,9 @@ zc.zk.ZooKeeper
 ``walk(path)``
    Iterate over the nodes of a tree rooted at path.
 
-In addition, ``ZooKeeper`` instances provide access to the following
-ZooKeeper functions as methods: ``acreate``, ``add_auth``,
-``adelete``, ``aexists``, ``aget``, ``aget_acl``, ``aget_children``,
-``aset``, ``aset_acl``, ``async``, ``create``, ``delete``, ``exists``,
-``get``, ``get_acl``, ``is_unrecoverable``, ``recv_timeout``, ``set``,
-``set2``, ``set_acl``, and ``set_watcher``.  When calling these as
-methods on ``ZooKeeper`` instances, it isn't necessary to pass a
-handle, as that is provided automatically.
+In addition, ``ZooKeeper`` instances provide shortcuts to the following
+kazoo client methods: ``exists``, ``create``, ``delete``,
+``get_children``, ``get``, and ``set``.
 
 zc.zk.Children
 --------------
@@ -1220,26 +1229,6 @@ Other module attributes
    A convenient aliad for ``zc.zk.ZooKeeper`` for people who hate to
    type.
 
-``zc.zk.OPEN_ACL_UNSAFE``
-   An access control list that grants the world all rights.
-
-``zc.zk.READ_ACL_UNSAFE``
-   An access control list that gives the world read access only.
-
-.. test
-
-    >>> zc.zk.ZK is zc.zk.ZooKeeper
-    True
-
-    >>> import zookeeper
-    >>> zc.zk.OPEN_ACL_UNSAFE == [
-    ...     dict(perms=zookeeper.PERM_ALL, scheme='world', id='anyone')]
-    True
-
-    >>> zc.zk.READ_ACL_UNSAFE == [
-    ...     dict(perms=zookeeper.PERM_READ, scheme='world', id='anyone')]
-    True
-
 Testing support
 ---------------
 
@@ -1254,225 +1243,35 @@ more, use the help function::
 
     >>> import zc.zk.testing
 
+.. cleanup
+
+    >>> zk.close()
+
 
 Change History
 ==============
 
-1.2.0 (2012-12-14)
-------------------
+2.0.0a3 (2014-01-08)
+--------------------
 
-- A new script, zookeeper_set_property provides a simple way to update
-  individual properties on a node.
+- Renamed ``get_raw_properties`` back to ``get_properties``, for
+  backward compatibility, now that we've decided not to have a
+  separate package.
 
-- Fixed: nonsensical error messages when trying to import properties at
-         the top-level of an import file.
+- Added ``ensure_path`` to the testing client.
 
-1.1.0 (2012-11-07)
-------------------
+- Updated the ``ZooKeeper.close`` method to allow multiple calls.
+  (Calls after the first have no effect.)
 
-- Change the import_tree method to provide a way to suppress warnings
-  about not trimming nodes using ``trim=False``.
+2.0.0a2 (2014-01-06)
+--------------------
 
-1.0.0 (2012-09-25)
-------------------
+Fixed packaging bug.
 
-- The walk method now provides options to:
+2.0.0a1 (2014-01-06)
+--------------------
 
-  - skip ephemeral nodes
-
-  - yield a mutable children list, allowing walking to be
-    short-circuited.
-
-- Fixed: if nodes were deleted (e.g. by other clients) then the walk
-  method could raise ``NoNodeException``.
-
-0.9.4 (2012-09-11)
-------------------
-
-- Added entry point to create a script for validating a ZooKeeper tree.
-
-0.9.3 (2012-08-31)
-------------------
-
-- Fixed: The documentation for get_properties was missleading.
-
-- Fixed: Property links were incomplete:
-         Iteration and methods keys, values, and items weren't handled
-         correctly.
-
-- Fixed: When importing a tree with no changes and the trim option,
-         messages were printed for ephemeral nodes.
-
-0.9.2 (2012-08-08)
-------------------
-
-- Fixed: The testing ZooKeeper mock didn't properly error when bad
-  paths were passed to APIs.
-
-0.9.1 (2012-07-10)
-------------------
-
-- Fixed a packaging problem.
-
-0.9.0 (2012-06-25)
-------------------
-
-- Added support for discovering and testing ephemeral addresses using
-  zc.monitor.  See ``monitor.test`` for details.
-
-- Fixed: The ZooKeeper logging bridge sometimes generated lots of
-  spurious empty log messages.
-
-0.8.0 (2012-05-15)
-------------------
-
-- Fixed: ephemeral *sequence* nodes were restablished on session
-  reestablishment and shouldn't have been.
-
-- Fixed: The testing ZooKeeper mock didn't implement sequence nodes
-  correctly.
-
-- Fixed: The testing ZooKeeper mock didn't implement ``exists``
-  correctly.
-
-- Fixed: Session events were misshandled by the high-level children
-  and properties watch-support code in a way that cause scary both
-  otherwise harmless log message.
-
-- Increased the initial time to wait for ZooKeeper connections.
-
-0.7.0 (2012-01-27)
-------------------
-
-- Added ``walk``, ``is_ephemeral``, and ``create_recursive`` methods.
-
-- Fixed testing: Added access-control fidelity to the testing
-  ZooKeeper stub.
-
-- Fixed testing: There were spurious errors when closing a testing
-  ZooKeeper connection in which ephemeral nodes were created and when
-  they were deleted by another session.
-
-- Fixed testing: When running with a real ZooKeeper server, the
-  (virtual) root didn't have a ``zookeeper`` node.
-
-0.6.0 (2012-01-25)
-------------------
-
-- Improved ``register_server`` in the case when an empty host is
-  passed.  If `netifaces
-  <http://alastairs-place.net/projects/netifaces/>`_ is installed,
-  ``register_server`` registers all of the IPv4 addresses [#ifaces]_.
-
-- Added ``zookeeper_import`` shell script for importing ZooKeeper trees.
-
-- ``delete_recursive`` now has a ``force`` argument to force deletion of
-  ephemeral nodes.
-
-- Added ``zc.zk.ZK`` as an alias for ``zc.zk.ZooKeeper``.
-
-- Documented pre-defined access control lists
-  ``zc.zk.OPEN_ACL_UNSAFE`` and ``zc.zk.READ_ACL_UNSAFE``
-
-- Fixed: the ``dry_run`` argument to ``delete_recursive`` didn't work
-  properly.
-
-0.5.2 (2012-01-06)
-------------------
-
-- ZooKeeper node data and child watchers are called on session
-  expiry.  This was unexpected.  The data and child handler
-  functions now handle these events more gracefully.
-
-- The ZooKeeper C library is excessively chatty about something that
-  people don't know how to care about it:
-
-    https://issues.apache.org/jira/browse/ZOOKEEPER-642
-
-  Until this is fixed, the log level for these messages is converted
-  to DEBUG.
-
-0.5.1 (2012-01-04)
-------------------
-
-- Fixed incompatibilities with ZooKeeper 3.3.4
-
-  - ZooKeeper raises a ``zookeeper.BadArgumentsException`` when an
-    invalid path is passed to ``exists``. Previously, returned False.
-
-  - ``get_children`` no-longer returnes ordered values.
-
-0.5.0 (2011-12-27)
-------------------
-
-- Symbolic links can now be relative and use ``.`` and ``..`` in the
-  usual way.
-
-- Added property links.
-
-- Rearranged code internally to make certain experiments with the tree
-  representation easier:
-
-  - The link-resolution code is ow separated into a separate base
-    class so it can be used with parse trees.
-
-  - ``parse_tree`` now accepts an optional node class.
-
-0.4.0 (2011-12-12)
-------------------
-
-- Provided a command-line tool, ``zookeeper_export``,  to export/print trees.
-- If a server is registered with an empty host name, the hostname is
-  changed to the result of `socket.getfqdn()``.
-- Fixed a race that could cause ZooKeeper logging info to be output
-  before ``zc.zk`` began redirecting it.
-
-0.3.0 (2011-12-11)
-------------------
-
-- Fixed bug: Ephemeral nodes weren't recreated when sessions were
-  reestablished.
-- ``zc.zk.RegisteringServer`` events are generated during server
-  registration to allow third-party libraries to record additional
-  properties on new server nodes.
-- Added a testing module that provides ZooKeeper emulation for
-  testing complex interactions with zc.zk without needing a running
-  ZooKeeper server.
-- `zc.zk.Children`_ objects now have a __len__, which is mainly useful
-  for testing whether they are empty.
-- Separated parsing of tree representations into a separate fuction,
-  ``parse_tree``, to support analysis and added a ``graphvis``
-  demonstration module to show how one might use tree representations
-  for system modeling.
-- Added a `zc.zk.ZooKeeper`_ ``wait`` constructor argument to wait
-  indefinately for ZooKeeper to be available.
-
-0.2.0 (2011-12-05)
-------------------
-
-- Added tree import and export.
-- Added symbolic-links.
-- properties set and update methods now accept positional
-  mapping objects (or iterables of items) as well as keyword arguments.
-- Added recursive node-deletion API.
-- Added ``get_properties`` to get properties without creating watches.
-- Added convenience access to low-level ZooKeeper APIs.
-- Added ``OPEN_ACL_UNSAFE`` and ``READ_ACL_UNSAFE`` (in ``zc.zk``),
-  which are mentioned by the ZooKeeper documentation. but not included in the
-  ``zookeeper`` module.
-- ``Children`` and ``Properties`` objects are now cleaned up when
-  no-longer used.  Previously, they remained in memory for the life of
-  the session.
-
-0.1.0 (2011-11-27)
-------------------
-
-Initial release
-
-.. test cleanup
-
-   >>> zk.close()
-
+Initial version forked from zc.zk 1.2.0
 
 ----------------------------------------------------------------------
 

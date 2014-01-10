@@ -15,7 +15,10 @@ import logging
 import optparse
 import sys
 import zc.zk
-import zookeeper
+import kazoo.security
+
+def world_acl(permission):
+    return kazoo.security.ACL(permission, kazoo.security.ANYONE_ID_UNSAFE)
 
 def export(args=None):
     """Usage: %prog [options] connection [path]
@@ -45,6 +48,7 @@ def export(args=None):
     else:
         print data,
 
+    zk.close()
 
 def import_(args=None):
     """Usage: %prog [options] connection [import-file [path]]
@@ -63,9 +67,9 @@ def import_(args=None):
     parser.add_option('-t', '--trim', action='store_true')
     parser.add_option(
         '-p', '--permission', type='int',
-        default=zookeeper.PERM_ALL,
+        default=kazoo.security.Permissions.ALL,
         help='ZooKeeper permission bits as integer,'
-        ' defaulting to zookeeper.PERM_ALL',
+        ' kazoo.security.Permissions.ALL',
         )
 
     options, args = parser.parse_args(args)
@@ -95,8 +99,10 @@ def import_(args=None):
         import_file.read(), path,
         trim=options.trim,
         dry_run=options.dry_run,
-        acl=[zc.zk.world_permission(options.permission)],
+        acl=[world_acl(options.permission)],
         )
+
+    zk.close()
 
 def validate_(args=None):
     """Usage: %prog connection [file [path]]
@@ -125,6 +131,8 @@ def validate_(args=None):
         import_file = open(import_file)
 
     zc.zk.parse_tree(import_file.read())
+
+    import_file.close()
 
 def set_property(args=None):
     if args is None:

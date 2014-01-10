@@ -31,44 +31,9 @@ import time
 import zc.zk
 import zc.zk.testing
 import zc.thread
-import zookeeper
 import zope.testing.loggingsupport
 import zope.testing.renormalizing
 import unittest
-
-class LoggingTests(unittest.TestCase):
-
-    def test_logging(self):
-        handler = zope.testing.loggingsupport.InstalledHandler(
-            'ZooKeeper')
-        try:
-            handle = zookeeper.init('zookeeper.example.com:2181')
-            zookeeper.close(handle)
-        except:
-            pass
-
-        wait(lambda : [r for r in handler.records
-                       if 'environment' in r.getMessage()]
-             )
-        handler.clear()
-
-        # Test that the filter for the "Exceeded deadline by" noise works.
-        # cheat and bypass zk by writing to the pipe directly.
-        os.write(zc.zk._logging_pipe[1],
-                 '2012-01-06 16:45:44,572:43673(0x1004f6000):ZOO_WARN@'
-                 'zookeeper_interest@1461: Exceeded deadline by 27747ms\n')
-        wait(lambda : [r for r in handler.records
-                       if ('Exceeded deadline by' in r.getMessage()
-                           and r.levelno == logging.DEBUG)
-                       ]
-             )
-
-        self.assert_(not [r for r in handler.records
-                          if ('Exceeded deadline by' in r.getMessage()
-                              and r.levelno == logging.WARNING)
-                          ])
-
-        handler.uninstall()
 
 def side_effect(mock):
     return lambda func: setattr(mock, 'side_effect', func)
@@ -88,409 +53,12 @@ class zklogger(object):
         logger.removeHandler(self.h)
         logger.setLevel(logging.NOTSET)
 
-class Tests(unittest.TestCase):
-
-    @mock.patch('zookeeper.init')
-    def setUp(self, init):
-        @zc.thread.Thread
-        def getzk():
-            zk = zc.zk.ZooKeeper()
-            return zk
-
-        wait(lambda : init.call_args)
-        (zkaddr, self.__session_watcher), kw = init.call_args
-        self.assertEqual((zkaddr, kw), ('127.0.0.1:2181', {}))
-        self.__session_watcher(
-            0, zookeeper.SESSION_EVENT, zookeeper.CONNECTED_STATE, '')
-        getzk.join(1)
-        self.__zk = getzk.value
-        self.assertEqual(self.__zk.handle, 0)
-
-        self.__teardowns = []
-        cm = mock.patch('zookeeper.exists')
-        @side_effect(cm.__enter__())
-        def exists(handle, path):
-            return True
-
-    def tearDown(self):
-        while self.__teardowns:
-            self.__teardowns.pop()()
-
-    def state_side_effect(self, handle):
-        self.assertEqual(handle, self.__zk.handle)
-        return zookeeper.CONNECTED_STATE
-
-    @mock.patch('zookeeper.close')
-    def test_close(self, close):
-        self.__zk.close()
-        close.assert_called_with(0)
-        self.assertEqual(self.__zk.handle, None)
-
-    @mock.patch('zookeeper.create')
-    def test_register_server(self, create):
-        @side_effect(create)
-        def _(handle, path_, data, acl, flags):
-            self.assertEqual((handle, path_), (0, '/foo/127.0.0.1:8080'))
-            self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
-            self.assertEqual(acl, [zc.zk.world_permission()])
-            self.assertEqual(flags, zookeeper.EPHEMERAL)
-
-        self.__zk.register_server('/foo', ('127.0.0.1', 8080), a=1)
-        self.__zk.register_server('/foo', '127.0.0.1:8080', a=1)
-
-    @mock.patch('netifaces.ifaddresses')
-    @mock.patch('netifaces.interfaces')
-    @mock.patch('zookeeper.create')
-    def test_register_server_blank(self, create, interfaces, ifaddresses):
-        addrs = {
-            'eth0': {2: [{'addr': '192.168.24.60',
-                          'broadcast': '192.168.24.255',
-                          'netmask': '255.255.255.0'}],
-                     10: [{'addr': 'fe80::21c:c0ff:fe1a:d12%eth0',
-                           'netmask': 'ffff:ffff:ffff:ffff::'}],
-                     17: [{'addr': '00:1c:c0:1a:0d:12',
-                           'broadcast': 'ff:ff:ff:ff:ff:ff'}]},
-            'foo': {2: [{'addr': '192.168.24.61',
-                         'broadcast': '192.168.24.255',
-                         'netmask': '255.255.255.0'}],
-                    },
-            'lo': {2: [{'addr': '127.0.0.1',
-                        'netmask': '255.0.0.0',
-                        'peer': '127.0.0.1'}],
-                   10: [{'addr': '::1',
-                         'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
-                   17: [{'addr': '00:00:00:00:00:00',
-                         'peer': '00:00:00:00:00:00'}],
-                   },
-            }
-
-        @side_effect(interfaces)
-        def _():
-            return list(addrs)
-
-        @side_effect(ifaddresses)
-        def _(iface):
-            return addrs[iface]
-
-        @side_effect(create)
-        def _(handle, path_, data, acl, flags):
-            self.assertEqual(handle, 0)
-            paths.append(path_)
-            self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
-            self.assertEqual(acl, [zc.zk.world_permission()])
-            self.assertEqual(flags, zookeeper.EPHEMERAL)
-
-        paths = []
-        self.__zk.register_server('/foo', ('', 8080), a=1)
-        self.assertEqual(sorted(paths),
-                         ['/foo/192.168.24.60:8080', '/foo/192.168.24.61:8080'])
-
-        paths = []
-        self.__zk.register_server('/foo', ':8080', a=1)
-        self.assertEqual(sorted(paths),
-                         ['/foo/192.168.24.60:8080', '/foo/192.168.24.61:8080'])
-
-    @mock.patch('netifaces.ifaddresses')
-    @mock.patch('netifaces.interfaces')
-    @mock.patch('zookeeper.create')
-    def test_register_server_blank_nonet(self, create, interfaces, ifaddresses):
-        addrs = {
-            'lo': {2: [{'addr': '127.0.0.1',
-                        'netmask': '255.0.0.0',
-                        'peer': '127.0.0.1'}],
-                   10: [{'addr': '::1',
-                         'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
-                   17: [{'addr': '00:00:00:00:00:00',
-                         'peer': '00:00:00:00:00:00'}]},
-            }
-
-        @side_effect(interfaces)
-        def _():
-            return list(addrs)
-
-        @side_effect(ifaddresses)
-        def _(iface):
-            return addrs[iface]
-
-        @side_effect(create)
-        def _(handle, path_, data, acl, flags):
-            self.assertEqual(handle, 0)
-            paths.append(path_)
-            self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
-            self.assertEqual(acl, [zc.zk.world_permission()])
-            self.assertEqual(flags, zookeeper.EPHEMERAL)
-
-        paths = []
-        self.__zk.register_server('/foo', ('', 8080), a=1)
-        self.assertEqual(sorted(paths), ['/foo/127.0.0.1:8080'])
-
-        paths = []
-        self.__zk.register_server('/foo', ':8080', a=1)
-        self.assertEqual(sorted(paths), ['/foo/127.0.0.1:8080'])
-
-    @mock.patch('zookeeper.create')
-    @mock.patch('socket.getfqdn')
-    def test_register_server_blank_nonetifaces(self, getfqdn, create):
-
-        netifaces = sys.modules['netifaces']
-        try:
-            sys.modules['netifaces'] = None
-
-            @side_effect(getfqdn)
-            def _():
-                return 'nonexistenttestserver.zope.com'
-
-            @side_effect(create)
-            def _(handle, path_, data, acl, flags):
-                self.assertEqual(
-                    (handle, path_),
-                    (0, '/foo/nonexistenttestserver.zope.com:8080'))
-                self.assertEqual(json.loads(data), dict(pid=os.getpid(), a=1))
-                self.assertEqual(acl, [zc.zk.world_permission()])
-                self.assertEqual(flags, zookeeper.EPHEMERAL)
-
-            self.__zk.register_server('/foo', ('', 8080), a=1)
-            self.__zk.register_server('/foo', ':8080', a=1)
-        finally:
-            sys.modules['netifaces'] = netifaces
-
-    @mock.patch('zookeeper.close')
-    @mock.patch('zookeeper.init')
-    @mock.patch('zookeeper.state')
-    @mock.patch('zookeeper.get_children')
-    def test_children(self, get_children, state, init, close):
-        state.side_effect = self.state_side_effect
-
-        path = '/test'
-        @side_effect(get_children)
-        def _(handle, path_, handler=None):
-            if handler is not None:
-                self.__handler = handler
-            self.assertEqual((handle, path_), (0, path))
-            return data
-
-        # Get the data the first time
-        data = []
-        children = self.__zk.children(path)
-        self.assertEqual(list(children), data)
-
-        # When tree updates, children are updated
-        data = ['a']
-        self.__handler(0, zookeeper.CHILD_EVENT, zookeeper.CONNECTED_STATE,
-                       path)
-        self.assertEqual(list(children), data)
-
-        # callbacks are called too:
-        cb = mock.Mock(); children(cb)
-        cb.assert_called_with(children)
-        cb.reset_mock()
-        self.assertEqual(len(children.callbacks), 1)
-        data = ['a', 'b']
-        self.__handler(0, zookeeper.CHILD_EVENT, zookeeper.CONNECTED_STATE,
-                       path)
-        self.assertEqual(list(children), data)
-        cb.assert_called_with(children)
-
-        # if a callback raises an exception, the exception is logged
-        # and callback is discarded
-        h = zope.testing.loggingsupport.Handler('zc.zk', level=logging.DEBUG)
-        h.install()
-        cb.side_effect = ValueError
-        data = ['a']
-        self.__handler(0, zookeeper.CHILD_EVENT, zookeeper.CONNECTED_STATE,
-                       path)
-        self.assertEqual(list(children), data)
-        self.assertEqual(len(children.callbacks), 0)
-        self.assertEqual(h.records[0].name, 'zc.zk')
-        self.assertEqual(h.records[0].levelno, logging.ERROR)
-        h.clear()
-
-        # if a callback raises zc.zk.CancelWatch, the cancel is logged
-        # and callback is discarded
-        cb = mock.Mock(); children(cb)
-        self.assertEqual(len(children.callbacks), 1)
-        cb.side_effect = zc.zk.CancelWatch
-        data = []
-        self.__handler(0, zookeeper.CHILD_EVENT, zookeeper.CONNECTED_STATE,
-                       path)
-        self.assertEqual(list(children), data)
-        self.assertEqual(len(children.callbacks), 0)
-        self.assertEqual(h.records[0].name, 'zc.zk')
-        self.assertEqual(h.records[0].levelno, logging.DEBUG)
-        h.clear()
-
-        h.uninstall()
-
-        # If a session expires, it will be reestablished with watches intact.
-        cb = mock.Mock(); children(cb)
-        self.__session_watcher(
-            0, zookeeper.SESSION_EVENT, zookeeper.EXPIRED_SESSION_STATE, "")
-        close.assert_called_with(0)
-        self.assertEqual(self.__zk.handle, None)
-        data = ['test']
-        self.__session_watcher(
-            0, zookeeper.SESSION_EVENT, zookeeper.CONNECTED_STATE, "")
-        self.assertEqual(list(children), data)
-        cb.assert_called_with(children)
-
-
-    @mock.patch('zookeeper.close')
-    @mock.patch('zookeeper.init')
-    @mock.patch('zookeeper.state')
-    @mock.patch('zookeeper.get')
-    def test_get_properties(self, get, state, init, close):
-        state.side_effect = self.state_side_effect
-
-        path = '/test'
-        @side_effect(get)
-        def _(handle, path_, handler=None):
-            if handler is not None:
-                self.__handler = handler
-            self.assertEqual((handle, path_), (0, path))
-            return json.dumps(data), {}
-
-        # Get the data the first time
-        data = {}
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), data)
-
-        # When node updates, properties are updated
-        data = dict(a=1)
-        self.__handler(0, zookeeper.CHANGED_EVENT, zookeeper.CONNECTED_STATE,
-                     path)
-        self.assertEqual(dict(properties), data)
-
-        # callbacks are called too:
-        cb = mock.Mock(); properties(cb)
-        cb.assert_called_with(properties)
-        cb.reset_mock()
-        self.assertEqual(len(properties.callbacks), 1)
-        self.__handler(0, zookeeper.CHANGED_EVENT, zookeeper.CONNECTED_STATE,
-                     path)
-        self.assertEqual(dict(properties), data)
-        cb.assert_called_with(properties)
-
-        # if a callback raises an exception, the exception is logged
-        # and callback is discarded
-        h = zope.testing.loggingsupport.Handler('zc.zk', level=logging.DEBUG)
-        h.install()
-        cb.side_effect = ValueError
-        data = dict(a=1)
-        self.__handler(0, zookeeper.CHANGED_EVENT, zookeeper.CONNECTED_STATE,
-                     path)
-        self.assertEqual(dict(properties), data)
-        self.assertEqual(len(properties.callbacks), 0)
-        self.assertEqual(h.records[0].name, 'zc.zk')
-        self.assertEqual(h.records[0].levelno, logging.ERROR)
-        h.clear()
-
-        # if a callback raises zc.zk.CancelWatch, the cancel is logged
-        # and callback is discarded
-        cb = mock.Mock(); properties(cb)
-        self.assertEqual(len(properties.callbacks), 1)
-        cb.side_effect = zc.zk.CancelWatch
-        data = {}
-        self.__handler(0, zookeeper.CHANGED_EVENT, zookeeper.CONNECTED_STATE,
-                     path)
-        self.assertEqual(dict(properties), data)
-        self.assertEqual(len(properties.callbacks), 0)
-        self.assertEqual(h.records[0].name, 'zc.zk')
-        self.assertEqual(h.records[0].levelno, logging.DEBUG)
-        h.clear()
-
-        h.uninstall()
-
-        # If a session expires, it will be reestablished with watches intact.
-        cb = mock.Mock(); properties(cb)
-        self.__session_watcher(
-            0, zookeeper.SESSION_EVENT, zookeeper.EXPIRED_SESSION_STATE, "")
-        close.assert_called_with(0)
-        self.assertEqual(self.__zk.handle, None)
-        data = dict(test=1)
-        self.__session_watcher(
-            0, zookeeper.SESSION_EVENT, zookeeper.CONNECTED_STATE, "")
-        self.assertEqual(dict(properties), data)
-        cb.assert_called_with(properties)
-
-    @mock.patch('zookeeper.state')
-    @mock.patch('zookeeper.get')
-    @mock.patch('zookeeper.set')
-    def test_set_properties(self, set, get, state):
-        state.side_effect = self.state_side_effect
-
-        path = '/test'
-        @side_effect(get)
-        def _(handle, path_, handler=None):
-            if handler is not None:
-                self.__handler = handler
-            self.assertEqual((handle, path_), (0, path))
-            return json.dumps(data), {}
-
-        data = dict(a=1)
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), data)
-
-        @side_effect(set)
-        def _(handle, path_, data, version=-1):
-            self.__set_data = json.loads(data)
-            self.assertEqual((handle, path_), (0, path))
-
-        properties.update(b=2)
-        self.assertEqual(self.__set_data, dict(a=1, b=2))
-        self.assertEqual(dict(properties), self.__set_data)
-
-        properties.set(c=3)
-        self.assertEqual(self.__set_data, dict(c=3))
-        self.assertEqual(dict(properties), self.__set_data)
-
-    @mock.patch('zookeeper.state')
-    @mock.patch('zookeeper.get')
-    @mock.patch('zookeeper.set')
-    def test_special_values(self, set, get, state):
-        state.side_effect = self.state_side_effect
-
-        path = '/test'
-        @side_effect(get)
-        def _(handle, path_, handler=None):
-            if handler is not None:
-                self.__handler = handler
-            self.assertEqual((handle, path_), (0, path))
-            return data, {}
-
-        data = ''
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), {})
-
-        data = 'xxx'
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), dict(string_value='xxx'))
-
-        data = '{xxx}'
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), dict(string_value='{xxx}'))
-
-        data = '\n{xxx}\n'
-        properties = self.__zk.properties(path)
-        self.assertEqual(dict(properties), dict(string_value='\n{xxx}\n'))
-
-        @side_effect(set)
-        def _(handle, path_, data, version=-1):
-            self.__set_data = data
-            self.assertEqual((handle, path_), (0, path))
-
-        properties.set(b=2)
-        self.assertEqual(self.__set_data, '{"b":2}')
-        properties.set()
-        self.assertEqual(self.__set_data, '')
-        properties.set(string_value='xxx')
-        self.assertEqual(self.__set_data, 'xxx')
-
 def test_children():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.create('/test')
     >>> children = zk.children('/test')
-    >>> sorted(children)
+    >>> list(children)
     []
 
     >>> len(children)
@@ -562,7 +130,7 @@ cancelled:
     >>> _ = zk.delete('/test/b') # doctest: +ELLIPSIS
     good ['a']
     bad later ['a']
-    ERROR watch(zc.zk.Children(0, /test), <function bad at ...>)
+    ERROR watch(zc.zk.Children(/test), <function bad at ...>)
     Traceback (most recent call last):
     ...
     ValueError
@@ -589,7 +157,7 @@ A callback can also cancel itself by raising CancelWatch:
     >>> create('/test/b') # doctest: +ELLIPSIS
     good ['a', 'b']
     cancel later ['a', 'b']
-    DEBUG cancelled watch(zc.zk.Children(0, /test), <function cancel at ...>)
+    DEBUG cancelled watch(zc.zk.Children(/test), <function cancel at ...>)
 
     >>> logger.uninstall()
 
@@ -600,78 +168,58 @@ A callback can also cancel itself by raising CancelWatch:
 def test_handler_cleanup():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.create('/test')
 
 Children:
-
-    >>> children = zk.children('/test')
-    >>> len(zk.watches)
-    1
-    >>> del children
-    >>> len(zk.watches)
-    0
 
     >>> children = zk.children('/test')
     >>> @children
     ... def kids(c):
     ...     print c
-    zc.zk.Children(0, /test)
-    >>> len(zk.watches)
-    1
+    zc.zk.Children(/test)
     >>> del children
-    >>> len(zk.watches)
-    1
+    >>> _ = zk.create('/test/a')
+    zc.zk.Children(/test)
     >>> del kids
-    >>> len(zk.watches)
-    0
+    >>> _ = zk.create('/test/aa')
 
     >>> @zk.children('/test')
     ... def kids(c):
     ...     print c
-    zc.zk.Children(0, /test)
+    zc.zk.Children(/test)
 
-    >>> len(zk.watches)
-    1
+    >>> _ = zk.create('/test/aaa')
+    zc.zk.Children(/test)
     >>> del kids
-    >>> len(zk.watches)
-    0
+    >>> _ = zk.create('/test/aaaa')
 
 Properties:
-
-    >>> properties = zk.properties('/test')
-    >>> len(zk.watches)
-    1
-    >>> del properties
-    >>> len(zk.watches)
-    0
 
     >>> properties = zk.properties('/test')
     >>> @properties
     ... def props(c):
     ...     print c
-    zc.zk.Properties(0, /test)
-    >>> len(zk.watches)
-    1
+    zc.zk.Properties(/test)
+
+    >>> p2 = zk.properties('/test')
     >>> del properties
-    >>> len(zk.watches)
-    1
+    >>> p2['a'] = 1
+    zc.zk.Properties(/test)
     >>> del props
-    >>> len(zk.watches)
-    0
+    >>> p2['a'] += 1
 
     >>> @zk.properties('/test')
     ... def props(c):
     ...     print c
-    zc.zk.Properties(0, /test)
+    zc.zk.Properties(/test)
 
-    >>> len(zk.watches)
-    1
+    >>> p2['a'] += 1
+    zc.zk.Properties(/test)
     >>> del props
-    >>> len(zk.watches)
-    0
+
+    >>> p2['a'] += 1
 
     >>> zk.close()
-
     """
 
 def test_deleted_node_with_watchers():
@@ -691,15 +239,15 @@ Set up some handlers.
     >>> @children
     ... def _(arg=None):
     ...     print 2, arg
-    2 zc.zk.Children(0, /test)
+    2 zc.zk.Children(/test)
 
     >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
     1 ['a']
-    2 zc.zk.Children(0, /test)
+    2 zc.zk.Children(/test)
 
     >>> _ = zk.delete('/test/a')
     1 []
-    2 zc.zk.Children(0, /test)
+    2 zc.zk.Children(/test)
 
     >>> properties = zk.properties('/test')
     >>> @properties
@@ -710,12 +258,11 @@ Set up some handlers.
     >>> @properties
     ... def _(arg=None):
     ...     print 4, arg
-    4 zc.zk.Properties(0, /test)
+    4 zc.zk.Properties(/test)
 
-    >>> zk.set('/test', '{"b": 2}')
+    >>> _ = zk.set('/test', '{"b": 2}')
     3 {u'b': 2}
-    4 zc.zk.Properties(0, /test)
-    0
+    4 zc.zk.Properties(/test)
 
 Hack data into the child watcher to verify it's cleared:
 
@@ -891,14 +438,14 @@ def test_resolve():
     >>> sorted(zk.properties('/top/a/top/a/b/top/a/b/c/top/a/b/c/d').items())
     [(u'loop ->', u'/top/a/b/c/d/loop'), (u'name', u'd'), (u'top ->', u'/top')]
 
-    >>> zk.register_server('/top/a/top/a/b/top/a/b/c/top/a/b/c/d', 'addr')
+    >>> zk.register('/top/a/top/a/b/top/a/b/c/top/a/b/c/d', 'addr')
     >>> sorted(map(str, zk.children('/top/a/top/a/b/top/a/b/c/top/a/b/c/d')))
     ['addr', 'e']
 
     >>> zk.resolve('/top/a/top/a/b/top/x')
     Traceback (most recent call last):
     ...
-    NoNodeException: /top/a/top/a/b/top/x
+    NoNodeError: /top/a/top/a/b/top/x
 
     >>> zk.resolve('/top/a/b/c/d/loop')
     Traceback (most recent call last):
@@ -943,168 +490,6 @@ def test_export_top_w_name():
     >>> zk.close()
     """
 
-def test_set():
-    """
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.get('/')[0]
-    ''
-    >>> zk.set('/', 'a'); zk.get('/')[0]
-    0
-    'a'
-
-    >>> zk.set('/', 'b', 0)
-    Traceback (most recent call last):
-    ...
-    BadVersionException: bad version
-
-    >>> zk.set('/', 'b'); zk.get('/')[0]
-    0
-    'b'
-
-    >>> r = zk.aset('/', 'c', -1, check_async()); event.wait(1)
-    ... # doctest: +ELLIPSIS
-    async callback got (...
-    >>> r
-    0
-
-    >>> zk.get('/')[0]
-    'c'
-
-    >>> r = zk.aset('/', 'd', 0,
-    ...             check_async(expected_status=zookeeper.BADVERSION)
-    ...             ); event.wait(1)
-    async callback got (None,)
-
-    >>> r
-    0
-
-    >>> r = zk.aset('/', 'd', 3, check_async()); event.wait(1)
-    ... # doctest: +ELLIPSIS
-    async callback got (...
-    >>> r
-    0
-
->>> time.sleep(1)
-
-    >>> zk.get('/')[0]
-    'd'
-
-    >>> zk.close()
-    """
-
-def test_delete():
-    """
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
-
-Synchronous variations:
-
-    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> _ = zk.set('/test/a', '1')
-    >>> _ = zk.set('/test/a', '2')
-    >>> zk.delete('/test/a', 0)
-    Traceback (most recent call last):
-    ...
-    BadVersionException: bad version
-
-    >>> zk.get_children('/test')
-    ['a']
-    >>> _ = zk.delete('/test/a', 2)
-    >>> zk.get_children('/test')
-    []
-
-    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> _ = zk.set('/test/a', '1')
-    >>> _ = zk.set('/test/a', '2')
-    >>> _ = zk.delete('/test/a', -1)
-    >>> zk.get_children('/test')
-    []
-
-    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> _ = zk.set('/test/a', '1')
-    >>> _ = zk.set('/test/a', '2')
-    >>> _ = zk.delete('/test/a')
-    >>> zk.get_children('/test')
-    []
-
-
-Asynchronous variations:
-
-    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> _ = zk.set('/test/a', '1')
-    >>> _ = zk.set('/test/a', '2')
-    >>> r = zk.adelete('/test/a', 0,
-    ...             check_async(expected_status=zookeeper.BADVERSION)
-    ...             ); event.wait(1)
-    async callback got ()
-    >>> r
-    0
-
-    >>> zk.get_children('/test')
-    ['a']
-    >>> r = zk.adelete('/test/a', 2, check_async()); event.wait(1)
-    async callback got ()
-    >>> r, zk.get_children('/test')
-    (0, [])
-
-    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> _ = zk.set('/test/a', '1')
-    >>> _ = zk.set('/test/a', '2')
-    >>> r = zk.adelete('/test/a', -1, check_async()); event.wait(1)
-    async callback got ()
-    >>> r, zk.get_children('/test')
-    (0, [])
-
-    >>> _ = zk.create('/test/a', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> _ = zk.set('/test/a', '1')
-    >>> _ = zk.set('/test/a', '2')
-    >>> r = zk.adelete('/test/a', completion=check_async()); event.wait(1)
-    async callback got ()
-    >>> r, zk.get_children('/test')
-    (0, [])
-
-    >>> zk.close()
-    """
-
-def test_set_acl():
-    """
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> _ = zk.create('/test', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> zk.get_acl('/test')[1] == zc.zk.OPEN_ACL_UNSAFE
-    True
-    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(17)])
-    0
-    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(17)]
-    True
-
-    >>> zk.set_acl('/test', 0, [zc.zk.world_permission(17)])
-    Traceback (most recent call last):
-    ...
-    BadVersionException: bad version
-
-    >>> zk.set_acl('/test', 1, [zc.zk.world_permission(18)])
-    0
-    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(18)]
-    True
-
-    >>> r = zk.aset_acl('/test', 0, [zc.zk.world_permission(19)],
-    ...                 check_async(expected_status=zookeeper.BADVERSION)
-    ...                 ); event.wait(1)
-    async callback got ()
-    >>> r
-    0
-
-    >>> r = zk.aset_acl('/test', 2, [zc.zk.world_permission(19)],
-    ...                 check_async()); event.wait(1)
-    async callback got ()
-    >>> r
-    0
-    >>> zk.get_acl('/test')[1] == [zc.zk.world_permission(19)]
-    True
-
-    >>> zk.close()
-    """
-
 def test_server_registeration_event():
     """
     >>> import sys, zc.zk.event, zope.event
@@ -1122,13 +507,13 @@ def test_server_registeration_event():
     >>> zc.zk.event.notify = notify
 
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.register_server('/fooservice/providers', '1.2.3.4:5678')
+    >>> zk.register('/fooservice/providers', '1.2.3.4:5678')
     RegisteringServer('1.2.3.4:5678', '/fooservice/providers', {'pid': 1793})
 
     >>> zk.print_tree('/fooservice/providers')
     /providers
       /1.2.3.4:5678
-        pid = 1793
+        pid = 9999
         test = 1
 
     >>> zk.close()
@@ -1139,31 +524,13 @@ def test_server_registeration_event():
     True
     """
 
-def connection_edge_cases():
-    """
-We can pass a session timeout, and it will be passed to ZooKeeper:
-
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181', 4242)
-    >>> zk.recv_timeout()
-    4242
-    >>> zk.close()
-
-Connecting to an invalid address caused a FailedConnect to be raised:
-
-    >>> zc.zk.ZooKeeper('192.0.2.42:2181')
-    Traceback (most recent call last):
-    ...
-    FailedConnect: 192.0.2.42:2181
-
-    """
-
-def register_server_at_root():
+def register_at_root():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.register_server('/', 'a:b')
+    >>> zk.register('/', 'a:b')
     >>> zk.print_tree() # doctest: +ELLIPSIS
     /a:b
-      pid = 2318
+      pid = 9999
     /fooservice
     ...
     >>> zk.close()
@@ -1252,7 +619,7 @@ def bad_links_are_reported_and_prevent_updates():
     Traceback (most recent call last):
     ...
     ValueError: ('Bad property link', 'c =>', '/a/b/c d',
-    NoNodeException('/a/b/c',))
+    NoNodeError('/a/b/c',))
     >>> pprint(dict(properties), width=70)
     {u'database': u'/databases/foomain',
      u'favorite_color': u'red',
@@ -1294,7 +661,7 @@ def bad_links_are_reported_and_prevent_updates():
     Traceback (most recent call last):
     ...
     ValueError: ('Bad property link', 'c =>', '/a/b/c d',
-    NoNodeException('/a/b/c',))
+    NoNodeError('/a/b/c',))
     >>> pprint(dict(properties), width=70)
     {u'database': u'/databases/foomain',
      u'favorite_color': u'red',
@@ -1335,7 +702,7 @@ def property_getitem_error_handling():
     >>> properties['a']
     Traceback (most recent call last):
     ...
-    BadPropertyLink: (NoNodeException(u'/a/b',), "in 'a =>': u'/a/b'")
+    BadPropertyLink: (NoNodeError(u'/a/b',), "in 'a =>': u'/a/b'")
     >>> properties['b'] # doctest: +NORMALIZE_WHITESPACE
     Traceback (most recent call last):
     ...
@@ -1426,7 +793,7 @@ def delete_recursive_dry_run():
 def delete_recursive_force():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.register_server('/fooservice/providers', 'a:b')
+    >>> zk.register('/fooservice/providers', 'a:b')
 
     >>> zk.delete_recursive('/fooservice', dry_run=True, force=True)
     would delete /fooservice/providers/a:b.
@@ -1440,7 +807,7 @@ def delete_recursive_force():
       threads = 1
       /providers
         /a:b
-          pid = 29093
+          pid = 9999
 
     >>> zk.delete_recursive('/fooservice', force=True)
 
@@ -1453,50 +820,13 @@ def delete_recursive_force():
 def is_ephemeral():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.register_server('/fooservice/providers', 'a:b')
+    >>> zk.register('/fooservice/providers', 'a:b')
     >>> zk.is_ephemeral('/fooservice')
     False
     >>> zk.is_ephemeral('/fooservice/providers')
     False
     >>> zk.is_ephemeral('/fooservice/providers/a:b')
     True
-    >>> zk.close()
-    """
-
-def create_recursive():
-    """
-    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    >>> zk.create_recursive('/fooservice/a/b/c', '', zc.zk.OPEN_ACL_UNSAFE)
-    >>> acl = [dict(perms=zookeeper.PERM_CREATE |
-    ...        zookeeper.PERM_READ |
-    ...        zookeeper.PERM_DELETE,
-    ...        scheme='world', id='anyone')]
-    >>> zk.create_recursive('/a/b/c', '{"z": 1}', acl)
-
-    >>> zk.print_tree()
-    /a
-      z = 1
-      /b
-        z = 1
-        /c
-          z = 1
-    /fooservice
-      database = u'/databases/foomain'
-      favorite_color = u'red'
-      threads = 1
-      /a
-        /b
-          /c
-      /providers
-
-    >>> for path in zk.walk('/fooservice/a'):
-    ...     if zk.get_acl(path)[1] != zc.zk.OPEN_ACL_UNSAFE:
-    ...         print 'oops'
-
-    >>> for path in zk.walk('/a'):
-    ...     if zk.get_acl(path)[1] != acl:
-    ...         print 'oops'
-
     >>> zk.close()
     """
 
@@ -1549,7 +879,7 @@ def no_spam_when_not_trimming_ephemeral_nodes():
       threads = 1
       /providers
 
-    >>> zk.register_server('/fooservice/providers', 'a:a')
+    >>> zk.register('/fooservice/providers', 'a:a')
     >>> zk.print_tree()
     /fooservice
       database = u'/databases/foomain'
@@ -1557,7 +887,7 @@ def no_spam_when_not_trimming_ephemeral_nodes():
       threads = 1
       /providers
         /a:a
-          pid = 1234
+          pid = 9999
 
     >>> zk.import_tree('''
     ... /fooservice
@@ -1581,6 +911,188 @@ def cant_import_top_level_properties():
     Traceback (most recent call last):
     ...
     ValueError: Can't import properties above imported nodes.
+    """
+
+connected_addrs = {
+    'eth0': {2: [{'addr': '192.168.24.60',
+                  'broadcast': '192.168.24.255',
+                  'netmask': '255.255.255.0'}],
+             10: [{'addr': 'fe80::21c:c0ff:fe1a:d12%eth0',
+                   'netmask': 'ffff:ffff:ffff:ffff::'}],
+             17: [{'addr': '00:1c:c0:1a:0d:12',
+                   'broadcast': 'ff:ff:ff:ff:ff:ff'}]},
+    'foo': {2: [{'addr': '192.168.24.61',
+                 'broadcast': '192.168.24.255',
+                 'netmask': '255.255.255.0'}],
+            },
+    'lo': {2: [{'addr': '127.0.0.1',
+                'netmask': '255.0.0.0',
+                'peer': '127.0.0.1'}],
+           10: [{'addr': '::1',
+                 'netmask': 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'}],
+           17: [{'addr': '00:00:00:00:00:00',
+                 'peer': '00:00:00:00:00:00'}],
+           },
+    }
+def blank_host_netifaces_connected():
+    r"""
+    If netifaces can be imported and we're connected to a network,
+    then non-local interfaces will be registered when calling
+    register:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> with mock.patch('netifaces.ifaddresses',
+    ...                  side_effect=lambda iface: connected_addrs[iface]):
+    ...   with mock.patch('netifaces.interfaces',
+    ...                   side_effect=lambda : list(connected_addrs)):
+    ...     zk.register('/fooservice/providers', ':8080')
+    ...     zk.register('/fooservice/providers', ('', 8081))
+
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /192.168.24.60:8080
+        pid = 9999
+      /192.168.24.60:8081
+        pid = 9999
+      /192.168.24.61:8080
+        pid = 9999
+      /192.168.24.61:8081
+        pid = 9999
+
+    >>> zk.close()
+    """
+
+def blank_host_nonetifaces():
+    r"""
+    If netifaces can't be imported, we use socket.fqdn:
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+
+    >>> import netifaces
+    >>> netifaces = sys.modules['netifaces']
+    >>> try:
+    ...     sys.modules['netifaces'] = None
+    ...     with mock.patch('socket.getfqdn',
+    ...                      side_effect=lambda : 'service.example.com'):
+    ...       zk.register('/fooservice/providers', ':8080')
+    ...       zk.register('/fooservice/providers', ('', 8081))
+    ... finally:
+    ...     sys.modules['netifaces'] = netifaces
+
+    >>> zk.print_tree('/fooservice/providers')
+    /providers
+      /service.example.com:8080
+        pid = 9999
+      /service.example.com:8081
+        pid = 9999
+
+    >>> zk.close()
+    """
+
+def test_special_values():
+    r"""
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> props = zk.properties('/fooservice')
+
+    >>> _ = zk.set('/fooservice', ''); print dict(props)
+    {}
+
+    >>> _ = zk.set('/fooservice', 'xxx'); print dict(props)
+    {'string_value': 'xxx'}
+    >>> _ = zk.set('/fooservice', '{xxx}'); print dict(props)
+    {'string_value': '{xxx}'}
+    >>> _ = zk.set('/fooservice', '\n{xxx}\n'); print dict(props)
+    {'string_value': '\n{xxx}\n'}
+
+    >>> props.set(b=2); print zk.get('/fooservice')[0]
+    {"b":2}
+    >>> props.set(); print zk.get('/fooservice')[0]
+    <BLANKLINE>
+    >>> props.set(string_value='xxx'); print zk.get('/fooservice')[0]
+    xxx
+
+    >>> zk.close()
+    """
+
+def test_property_loops():
+    r"""
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.import_tree('''
+    ... /x
+    ...   a = 1
+    ...   b => ../y
+    ... /y
+    ...   a => ../x
+    ...   b = 2
+    ... ''')
+    >>> logger = zklogger()
+    >>> props = zk.properties('/x')
+    >>> sorted(props.items())
+    [(u'a', 1), (u'b', 2)]
+
+    >>> zk.close()
+    >>> logger.uninstall()
+    """
+
+def test_existing_client():
+    r"""
+
+    You can use an existing kazoo client:
+
+    >>> import kazoo.client
+    >>> client = kazoo.client.KazooClient('zookeeper.example.com:2181')
+    >>> zk = zc.zk.ZooKeeper(client)
+    >>> zk.client is client
+    True
+
+You have to start the client yourself:
+
+    >>> try: zk.print_tree()
+    ... except Exception: pass
+    ... else: print 'oops'
+
+    >>> client.start()
+
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+
+Closing doesn't close the client:
+
+    >>> zk.close()
+
+    >>> sorted(client.get_children('/'))
+    ['fooservice', 'zookeeper']
+
+    >>> client.stop()
+    >>> client.close()
+    """
+
+def test_register_server():
+    """The older register_server name is preserved for backward compatibility.
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register_server('/fooservice', 'test:1')
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /providers
+      /test:1
+        pid = 9999
+    >>> zk.close()
+    """
+
+def no_error_calling_close_more_than_once():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.close()
+    >>> zk.close()
+    >>> zk.close()
     """
 
 event = threading.Event()
@@ -1609,16 +1121,13 @@ def setUpREADME(test):
 
 def disconnectiontestsSetup(test):
     zc.zk.testing.setUp(test)
-    setupstack.register(
-        test, setattr, zc.zk.ZooKeeper, 'initial_connection_wait',
-        zc.zk.ZooKeeper.initial_connection_wait)
-    zc.zk.ZooKeeper.initial_connection_wait = .1
 
 checker = zope.testing.renormalizing.RENormalizing([
     (re.compile('pid = \d+'), 'pid = 9999'),
     (re.compile("{'pid': \d+}"), 'pid = 9999'),
     (re.compile('/zc\.zk\.testing\.test-root\d+'), ''),
     (re.compile(r'2 None\n4 None'), '4 None\n2 None'),
+    (re.compile(r"u'(/?\w)"), r"'\1"),
     ])
 
 def test_suite():
@@ -1642,8 +1151,6 @@ def test_suite():
             ),
         ))
     if not zc.zk.testing.testing_with_real_zookeeper():
-        suite.addTest(unittest.makeSuite(Tests))
-        suite.addTest(unittest.makeSuite(LoggingTests))
         suite.addTest(doctest.DocFileSuite(
             'ephemeral_node_recovery_on_session_reestablishment.test',
             setUp=setUpEphemeral_node_recovery_on_session_reestablishment,
