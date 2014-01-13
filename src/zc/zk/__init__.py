@@ -38,10 +38,7 @@ def encode(props):
     if len(props) == 1 and 'string_value' in props:
         return props['string_value']
 
-    if props:
-        return json.dumps(props, separators=(',',':'))
-    else:
-        return ''
+    return json.dumps(props, separators=(',',':'))
 
 def decode(sdata, path='?'):
     s = sdata.strip()

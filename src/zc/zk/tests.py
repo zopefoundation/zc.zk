@@ -1007,7 +1007,7 @@ def test_special_values():
     >>> props.set(b=2); print zk.get('/fooservice')[0]
     {"b":2}
     >>> props.set(); print zk.get('/fooservice')[0]
-    <BLANKLINE>
+    {}
     >>> props.set(string_value='xxx'); print zk.get('/fooservice')[0]
     xxx
 

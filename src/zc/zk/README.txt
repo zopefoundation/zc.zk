@@ -1251,6 +1251,18 @@ more, use the help function::
 Change History
 ==============
 
+2.0.0a4 (2014-01-13)
+--------------------
+
+Fixed: When saving properties in ZooKeeper nodes, empty properties
+       were encoded as empty strings.  When Kazoo saves empty strings,
+       it does so in a way that causes the ZooKeeper C client (or at
+       least the Python C binding) to see semi-random data, sometimes
+       including data written previously to other nodes.  This can
+       cause havoc when data for one node leaks into another.
+
+       Now, we save enpty propeties as ``'{}'``.
+
 2.0.0a3 (2014-01-08)
 --------------------
 
