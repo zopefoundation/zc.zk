@@ -1261,7 +1261,7 @@ Fixed: When saving properties in ZooKeeper nodes, empty properties
        including data written previously to other nodes.  This can
        cause havoc when data for one node leaks into another.
 
-       Now, we save enpty propeties as ``'{}'``.
+       Now, we save empty properties as ``'{}'``.
 
 2.0.0a3 (2014-01-08)
 --------------------
