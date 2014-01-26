@@ -462,12 +462,15 @@ class ZooKeeper:
             return self._check_handle(handle, False).state
 
     def create(self, handle, path, data, acl, ephemeral=False):
+        if isinstance(path, str):
+            path = path.decode('utf8')
+        while path.endswith(u'/'):
+            path = path[:-1]
+        base, name = path.rsplit(u'/', 1)
+
         with self.lock:
             self._check_handle(handle)
-            while path.endswith('/'):
-                path = path[:-1]
-            base, name = path.rsplit('/', 1)
-            node = self._traverse(base or '/')
+            node = self._traverse(base or u'/')
             if name in node.children:
                 raise kazoo.exceptions.NodeExistsError()
             node.children[name] = newnode = Node(data)
@@ -481,6 +484,8 @@ class ZooKeeper:
             return path
 
     def ensure_path(self, handle, path, acl):
+        if isinstance(path, str):
+            path = path.decode('utf8')
         while path.endswith('/'):
             path = path[:-1]
         if not path:
