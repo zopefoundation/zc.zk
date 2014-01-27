@@ -14,14 +14,14 @@ reestablishment:
 So, we have an ephemeral node before losing the session:
 
     >>> zk.get_children('/fooservice/providers')
-    ['test']
+    [u'test']
 
     >>> zk.client.lose_session()
 
 Now, after creating the new session, we have the ephemeral node:
 
     >>> zk.get_children('/fooservice/providers')
-    ['test']
+    [u'test']
 
 Some custom data and acl:
 

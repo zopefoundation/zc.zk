@@ -489,6 +489,9 @@ class Children(Watch):
 
     children = True
 
+    def setData(self, data):
+        Watch.setData(self, [v.encode('utf8') for v in data])
+
     def __len__(self):
         return len(self.data)
 

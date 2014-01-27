@@ -207,7 +207,7 @@ but you can still update data.
 
     >>> p2 = zk.properties('/fooservice', watch=False)
     >>> sorted(p2)
-    ['secret', 'threads']
+    [u'secret', u'threads']
     >>> p2(lambda data: None)
     Traceback (most recent call last):
     ...
@@ -544,7 +544,7 @@ the exported tree.
 Now, we'll create a databases node::
 
     >>> zk.create('/databases')
-    '/databases'
+    u'/databases'
 
 And import the export::
 
@@ -992,7 +992,7 @@ You can also get a mutable list of children, which you can mutate:
     >>> i = zk.walk('/fooservice', children=True)
     >>> path, children = i.next()
     >>> path, children
-    ('/fooservice', ['providers', 'provision'])
+    ('/fooservice', [u'providers', u'provision'])
 
     >>> del children[0]
     >>> for path in i:
@@ -1250,6 +1250,14 @@ more, use the help function::
 
 Change History
 ==============
+
+Fixed: Kazoo returns node children as Unicode.
+       zc.zk client applications expect children as
+       returned by the children to have bytes values and
+       they use the values to connect sockets.
+
+       ``Children`` objects returned by zc.zk.children now encode
+       child names using UTF-8.
 
 2.0.0a4 (2014-01-13)
 --------------------

@@ -1065,7 +1065,7 @@ Closing doesn't close the client:
     >>> zk.close()
 
     >>> sorted(client.get_children('/'))
-    ['fooservice', 'zookeeper']
+    [u'fooservice', u'zookeeper']
 
     >>> client.stop()
     >>> client.close()
@@ -1127,7 +1127,6 @@ checker = zope.testing.renormalizing.RENormalizing([
     (re.compile("{'pid': \d+}"), 'pid = 9999'),
     (re.compile('/zc\.zk\.testing\.test-root\d+'), ''),
     (re.compile(r'2 None\n4 None'), '4 None\n2 None'),
-    (re.compile(r"u'(/?\w)"), r"'\1"),
     ])
 
 def test_suite():
