@@ -137,7 +137,9 @@ class ZooKeeper(Resolving):
         def watch_session(state):
             if state == kazoo.protocol.states.KazooState.CONNECTED:
                 if self.state == kazoo.protocol.states.KazooState.LOST:
+                    logger.warning("session lost")
                     for path, data in self.ephemeral.items():
+                        logger.info("restoring ephemeral %s", path)
                         self.create(
                             path, data['data'], data['acl'], ephemeral=True)
                 logger.info('connected')

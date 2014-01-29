@@ -1251,6 +1251,8 @@ more, use the help function::
 Change History
 ==============
 
+- Log when sessions are lost and ephemeral nodes are restored.
+
 Fixed: Kazoo returns node children as Unicode.
        zc.zk client applications expect children as
        returned by the children to have bytes values and
