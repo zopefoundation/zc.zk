@@ -29,7 +29,7 @@ def log_ephemeral_restoration_on_session_timeout():
     >>> zk.register('/fooservice/providers', 'test')
     >>> handler = zope.testing.loggingsupport.InstalledHandler('zc.zk')
 
-Now, we'll expire the session:
+    Now, we'll expire the session:
 
     >>> handler.clear()
     >>> zk.client.lose_session()
