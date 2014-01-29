@@ -23,6 +23,27 @@ from zope.testing.wait import wait
 import zc.zk
 import zope.testing.loggingsupport
 
+def log_ephemeral_restoration_on_session_timeout():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.register('/fooservice/providers', 'test')
+    >>> handler = zope.testing.loggingsupport.InstalledHandler('zc.zk')
+
+    Now, we'll expire the session:
+
+    >>> handler.clear()
+    >>> zk.client.lose_session()
+    >>> print handler
+    zc.zk WARNING
+      session lost
+    zc.zk INFO
+      restoring ephemeral /fooservice/providers/test
+    zc.zk INFO
+      connected
+
+    >>> zk.close()
+    """
+
 def session_timeout_with_child_and_data_watchers():
     """
 
@@ -72,6 +93,8 @@ Now, if we make changes, they'll be properly reflected:
     ['providers', 'x']
 
     >>> print handler
+    zc.zk WARNING
+      session lost
     zc.zk INFO
       connected
 
