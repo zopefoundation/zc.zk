@@ -115,8 +115,11 @@ class ZooKeeper(Resolving):
     def __init__(
         self,
         connection_string="127.0.0.1:2181",
-        session_timeout=10.0,
+        session_timeout=None,
         ):
+
+        if session_timeout is None:
+            session_timeout = 10.0
 
         if isinstance(connection_string, basestring):
             client = kazoo.client.KazooClient(

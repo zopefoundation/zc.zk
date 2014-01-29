@@ -95,3 +95,10 @@ Now, if we make changes, they'll be properly reflected:
 
     >>> zk.close()
     """
+
+def can_pass_None_for_session_timeout(): # here cuz must be used w mock :)
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181', None)
+    >>> zk.client.timeout
+    10.0
+    """
