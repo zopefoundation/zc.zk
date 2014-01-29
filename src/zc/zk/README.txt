@@ -1259,6 +1259,9 @@ Fixed: Kazoo returns node children as Unicode.
        ``Children`` objects returned by zc.zk.children now encode
        child names using UTF-8.
 
+Fixed: zc.zk 2 didn't accept a value of None for session_timeout
+       constructor argument, breaking some old clients.
+
 2.0.0a4 (2014-01-13)
 --------------------
 
