@@ -1251,6 +1251,9 @@ more, use the help function::
 Change History
 ==============
 
+2.0.0a5 (2014-01-30)
+--------------------
+
 - Log when sessions are lost and ephemeral nodes are restored.
 
 Fixed: Kazoo returns node children as Unicode.
