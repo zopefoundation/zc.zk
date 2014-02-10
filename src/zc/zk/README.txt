@@ -1251,7 +1251,7 @@ more, use the help function::
 Change History
 ==============
 
-2.0.0a5 (2014-02-10)
+2.0.0a6 (2014-02-10)
 --------------------
 
 This release has a number of backward-compatibility changes made after
