@@ -1095,6 +1095,27 @@ def no_error_calling_close_more_than_once():
     >>> zk.close()
     """
 
+def backward_compatible_create_recursive():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> zk.create_recursive(
+    ...     '/fooservice/bas/boo', '{"a": 1}', zc.zk.READ_ACL_UNSAFE)
+    >>> zk.print_tree()
+    /fooservice
+      database = u'/databases/foomain'
+      favorite_color = u'red'
+      threads = 1
+      /bas
+        /boo
+          a = 1
+      /providers
+
+    >>> zk.client.get_acls('/fooservice/bas/boo')[0] == zc.zk.READ_ACL_UNSAFE
+    True
+
+    >>> zk.close()
+    """
+
 event = threading.Event()
 def check_async(show=True, expected_status=0):
     event.clear()

@@ -399,6 +399,10 @@ class ZooKeeper(Resolving):
             for p in self.walk(path+name):
                 yield p
 
+    def create_recursive(self, path, data, acl):
+        self.client.ensure_path(path, acl)
+        self.client.set(path, data)
+
     # for test assertions, in a backward-compatible way
     def recv_timeout(self):
         return self.session_timeout

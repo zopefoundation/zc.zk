@@ -1261,6 +1261,8 @@ Change History
 
 - Fixed a bug in the way test machinery used internal handles.
 
+- Restored the create_recursive method for backward compatibility.
+
 2.0.0a5 (2014-01-30)
 --------------------
 
