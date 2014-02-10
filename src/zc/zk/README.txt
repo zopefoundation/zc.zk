@@ -1251,6 +1251,12 @@ more, use the help function::
 Change History
 ==============
 
+2.0.0a5 (2014-02-10)
+--------------------
+
+This release has a number of backward-compatibility changes made after
+testing some existing client software with the a5 release.
+
 - Restored the ``wait`` constructor flag to keep trying if a connection
   fails.
 
