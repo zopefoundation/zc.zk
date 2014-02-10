@@ -23,6 +23,51 @@ from zope.testing.wait import wait
 import zc.zk
 import zope.testing.loggingsupport
 
+def wait_for_zookeeper():
+    """
+    Normally, zc.zk.ZooKeeper raises an exception if it can't connect
+    to ZooKeeper in a short time.  Some
+    applications might want to wait, so zc.zk.ZooKeeper accepts a wait
+    parameter that causes it to wait for a connection.
+
+    >>> zk = None
+    >>> import zc.thread
+
+    >>> handler = zope.testing.loggingsupport.InstalledHandler('zc.zk')
+
+    >>> @zc.thread.Thread
+    ... def connect():
+    ...     global zk
+    ...     zk = zc.zk.ZooKeeper('Invalid', wait=True)
+
+    We'll wait a while while it tries in vane to connect:
+
+    >>> wait((lambda : zk is not None), 4)
+    Traceback (most recent call last):
+    ...
+    TimeOutWaitingFor: <lambda>
+
+    >>> print handler # doctest: +ELLIPSIS
+    zc.zk CRITICAL
+      Can't connect to ZooKeeper at 'Invalid'
+    zc.zk CRITICAL
+      Can't connect to ZooKeeper at 'Invalid'
+    ...
+    >>> handler.uninstall()
+
+    Now, we'll make the connection possible:
+
+    >>> ZooKeeper._allow_connection('Invalid')
+    >>> wait(lambda : zk is not None)
+
+    >>> zk.state
+    'CONNECTED'
+
+    Yay!
+
+    >>> zk.close()
+    """
+
 def log_ephemeral_restoration_on_session_timeout():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')

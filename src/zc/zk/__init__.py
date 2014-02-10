@@ -116,10 +116,13 @@ class ZooKeeper(Resolving):
         self,
         connection_string="127.0.0.1:2181",
         session_timeout=None,
+        wait = False
         ):
 
         if session_timeout is None:
             session_timeout = 10.0
+
+        self.session_timeout = session_timeout
 
         if isinstance(connection_string, basestring):
             client = kazoo.client.KazooClient(
@@ -153,7 +156,18 @@ class ZooKeeper(Resolving):
         if started:
             watch_session(client.state)
         else:
-            client.start()
+            while 1:
+                try:
+                    client.start()
+                except Exception:
+                    logger.critical("Can't connect to ZooKeeper at %r",
+                                    connection_string)
+                    if wait:
+                        time.sleep(1)
+                    else:
+                        raise FailedConnect(connection_string)
+                else:
+                    break
 
     def get_properties(self, path):
         return decode(self.get(path)[0], path)
@@ -384,6 +398,14 @@ class ZooKeeper(Resolving):
                 name = '/'+name
             for p in self.walk(path+name):
                 yield p
+
+    def create_recursive(self, path, data, acl):
+        self.client.ensure_path(path, acl)
+        self.client.set(path, data)
+
+    # for test assertions, in a backward-compatible way
+    def recv_timeout(self):
+        return self.session_timeout
 
 ZK = ZooKeeper
 
