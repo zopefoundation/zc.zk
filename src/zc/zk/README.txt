@@ -1254,10 +1254,18 @@ Change History
 - Restored the ``wait`` constructor flag to keep trying if a connection
   fails.
 
+- Restored the ``recv_timeout`` for test backward compatibility.
+
+- Restored the test handle-management mechanism for test
+  backward-compatibility.
+
+- Fixed a bug in the way test machinery used internal handles.
+
 2.0.0a5 (2014-01-30)
 --------------------
 
 - Log when sessions are lost and ephemeral nodes are restored.
+
 
 Fixed: Kazoo returns node children as Unicode.
        zc.zk client applications expect children as

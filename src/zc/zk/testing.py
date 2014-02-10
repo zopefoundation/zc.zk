@@ -255,7 +255,7 @@ class Client:
     def ChildrenWatch(self, path):
         node = self.zookeeper._traverse(path)
         watch = Watch(lambda : list(node.children))
-        node.child_watchers += ((self.zookeeper.handle, watch), )
+        node.child_watchers += ((self.handle, watch), )
         return watch
 
     def DataWatch(self, path):
@@ -340,8 +340,6 @@ badpath = re.compile(r'(^|/)\.\.?(/|$)').search
 
 class ZooKeeper:
 
-    handle = -1
-
     def __init__(self, connection_string, tree):
         self.connection_strings = set([connection_string])
         self.root = tree
@@ -353,8 +351,9 @@ class ZooKeeper:
 
     def init(self, addr, watch=None, session_timeout=4000):
         with self.lock:
-            self.handle += 1
-            handle = self.handle
+            handle = 0
+            while handle in self.sessions:
+                handle += 1
             self.sessions[handle] = Session(
                 self, handle, watch, session_timeout)
             if addr in self.connection_strings:
@@ -568,6 +567,10 @@ class ZooKeeper:
             self._check_handle(handle)
             node = self._traverse(path)
             return node.data, node
+
+    def recv_timeout(self, handle):
+        with self.lock:
+            return self._check_handle(handle, False).session_timeout
 
     def set(self, handle, path, data, version=-1):
         with self.lock:

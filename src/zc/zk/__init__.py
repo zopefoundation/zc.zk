@@ -122,6 +122,8 @@ class ZooKeeper(Resolving):
         if session_timeout is None:
             session_timeout = 10.0
 
+        self.session_timeout = session_timeout
+
         if isinstance(connection_string, basestring):
             client = kazoo.client.KazooClient(
                 connection_string, session_timeout)
@@ -396,6 +398,10 @@ class ZooKeeper(Resolving):
                 name = '/'+name
             for p in self.walk(path+name):
                 yield p
+
+    # for test assertions, in a backward-compatible way
+    def recv_timeout(self):
+        return self.session_timeout
 
 ZK = ZooKeeper
 
