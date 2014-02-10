@@ -33,8 +33,6 @@ def wait_for_zookeeper():
     >>> zk = None
     >>> import zc.thread
 
-    >> import pdb; pdb.set_trace(); zk = zc.zk.ZooKeeper('Invalid', wait=True)
-
     >>> handler = zope.testing.loggingsupport.InstalledHandler('zc.zk')
 
     >>> @zc.thread.Thread
