@@ -116,6 +116,7 @@ class ZooKeeper(Resolving):
         self,
         connection_string="127.0.0.1:2181",
         session_timeout=None,
+        wait = False
         ):
 
         if session_timeout is None:
@@ -153,7 +154,18 @@ class ZooKeeper(Resolving):
         if started:
             watch_session(client.state)
         else:
-            client.start()
+            while 1:
+                try:
+                    client.start()
+                except Exception:
+                    logger.critical("Can't connect to ZooKeeper at %r",
+                                    connection_string)
+                    if wait:
+                        time.sleep(1)
+                    else:
+                        raise FailedConnect(connection_string)
+                else:
+                    break
 
     def get_properties(self, path):
         return decode(self.get(path)[0], path)

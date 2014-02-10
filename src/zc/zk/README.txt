@@ -1251,6 +1251,9 @@ more, use the help function::
 Change History
 ==============
 
+- Restored the ``wait`` constructor flag to keep trying if a connection
+  fails.
+
 2.0.0a5 (2014-01-30)
 --------------------
 

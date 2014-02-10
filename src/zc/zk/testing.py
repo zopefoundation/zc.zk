@@ -226,7 +226,7 @@ class Client:
         self.hosts = hosts
         self.timeout = timeout
         self.listeners = []
-        self.state = kazoo.protocol.states.KazooState.LOST
+        self.state = None
 
     def add_listener(self, func):
         self.listeners.append(func)
@@ -237,6 +237,9 @@ class Client:
             for func in self.listeners:
                 func(state)
         self.handle = self.zookeeper.init(self.hosts, handle, self.timeout)
+        if self.state is None:
+            import kazoo.handlers.threading
+            raise kazoo.handlers.threading.TimeoutError('Connection time-out',)
 
     def create(
         self, path, value="", acl=zc.zk.OPEN_ACL_UNSAFE, ephemeral=False
