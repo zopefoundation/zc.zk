@@ -3,3 +3,5 @@ bin/
 develop-eggs/
 parts/
 src/zc.zk.egg-info/
+build
+dist
