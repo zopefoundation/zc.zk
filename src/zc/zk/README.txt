@@ -1251,6 +1251,12 @@ more, use the help function::
 Change History
 ==============
 
+2.0.0a7 (2014-02-12)
+--------------------
+
+Fixed: The release missed a zcml file helpful for registering
+monitoring components.
+
 2.0.0a6 (2014-02-10)
 --------------------
 
