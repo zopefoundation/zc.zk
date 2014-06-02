@@ -1251,6 +1251,12 @@ more, use the help function::
 Change History
 ==============
 
+2.0.0 (2014-06-02)
+==================
+
+Final release (identical to 2.0.0a7). We've used this in production
+for several months.
+
 2.0.0a7 (2014-02-12)
 --------------------
 
