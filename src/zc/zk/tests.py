@@ -1099,7 +1099,7 @@ def backward_compatible_create_recursive():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
     >>> zk.create_recursive(
-    ...     '/fooservice/bas/boo', '{"a": 1}', zc.zk.READ_ACL_UNSAFE)
+    ...     '/fooservice/bas/boo', '{"a": 1}', zc.zk.OPEN_ACL_UNSAFE)
     >>> zk.print_tree()
     /fooservice
       database = u'/databases/foomain'
@@ -1110,7 +1110,7 @@ def backward_compatible_create_recursive():
           a = 1
       /providers
 
-    >>> zk.client.get_acls('/fooservice/bas/boo')[0] == zc.zk.READ_ACL_UNSAFE
+    >>> zk.client.get_acls('/fooservice/bas/boo')[0] == zc.zk.OPEN_ACL_UNSAFE
     True
 
     >>> zk.close()

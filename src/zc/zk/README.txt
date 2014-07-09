@@ -24,7 +24,7 @@ Important note for zc.zk 1.x users
   - It isn't based on the buggy ZooKeeper C interface and Python
     extension.
 
-  - It doesn't assumne that ephemeral nodes should be reestablished
+  - It doesn't assume that ephemeral nodes should be reestablished
     when a session expires and is recreated.
 
   zc.zk 2 uses Kazoo.

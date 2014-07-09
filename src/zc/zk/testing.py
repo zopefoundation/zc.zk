@@ -147,12 +147,12 @@ def setUp(test, tree=None, connection_string='zookeeper.example.com:2181'):
     starts with 'zc.zk.testing.test-root', and use that as the virtual
     root for your tests.  Although this is the virtual root, of the
     zookeeper tree in your tests, the presense of the node may be
-    shown in your tests. In particularm ``zookeeper.create`` returns
+    shown in your tests. In particular, ``zookeeper.create`` returns
     the path created and the string returned is real, not virtual.
     This node is cleaned up by the ``tearDown``.
 
     A doctest can determine if it's running with a stub ZooKeeper by
-    checking whether the value of the ZooKeeper gloval variable is None.
+    checking whether the value of the ZooKeeper global variable is None.
     A regular unit test can check the ZooKeeper test attribute.
     """
 
@@ -380,7 +380,7 @@ class ZooKeeper:
     def _traverse(self, path):
         """This is used by a bunch of the methods.
 
-        We'll test som edge cases here.
+        We'll test some edge cases here.
 
         We error on bad paths:
 
@@ -539,7 +539,7 @@ class ZooKeeper:
         >>> zk = zc.zk.ZK('zookeeper.example.com:2181')
         >>> zk.exists('/test_exists')
 
-        When a node exists, exists retirnes it's meta data, which is
+        When a node exists, exists returns its meta data, which is
         the same as the second result from get:
 
         >>> _ = zk.create('/test_exists')
