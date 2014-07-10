@@ -1095,6 +1095,51 @@ def no_error_calling_close_more_than_once():
     >>> zk.close()
     """
 
+def create_handles_sequence_nodes():
+    """
+    This ensures we handle sequence nodes the same way as the real
+    zookeeper in the zc.zk.testing support.  This has to pass both with
+    the test support and a real zookeeper backend.
+
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.create('/a', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> _ = zk.create('/b', '', zc.zk.OPEN_ACL_UNSAFE)
+    >>> zk.delete_recursive('/fooservice')
+    >>> zk.create(
+    ...     '/a/fubar', '{"a": 1}', zc.zk.OPEN_ACL_UNSAFE, sequence=True)
+    u'/a/fubar0000000000'
+    >>> zk.print_tree()
+    /a
+      /fubar0000000000
+        a = 1
+    /b
+
+    >>> zk.create(
+    ...     '/a/fubar', '{"a": 2}', zc.zk.OPEN_ACL_UNSAFE, sequence=True)
+    u'/a/fubar0000000001'
+    >>> zk.print_tree()
+    /a
+      /fubar0000000000
+        a = 1
+      /fubar0000000001
+        a = 2
+    /b
+
+    >>> zk.create(
+    ...     '/b/fubar', '{"a": 42}', zc.zk.OPEN_ACL_UNSAFE, sequence=True)
+    u'/b/fubar0000000000'
+    >>> zk.print_tree()
+    /a
+      /fubar0000000000
+        a = 1
+      /fubar0000000001
+        a = 2
+    /b
+      /fubar0000000000
+        a = 42
+
+    """
+
 def backward_compatible_create_recursive():
     """
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')

@@ -474,8 +474,9 @@ class ZooKeeper:
             self._check_handle(handle)
             node = self._traverse(base or u'/')
             if sequence:
-                node.child_seqno += 1
                 name = "%s%010d" % (name, node.child_seqno)
+                node.child_seqno += 1
+                path = u'%s/%s' % (base, name)
             if name in node.children:
                 raise kazoo.exceptions.NodeExistsError()
             node.children[name] = newnode = Node(data)
