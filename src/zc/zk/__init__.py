@@ -41,7 +41,7 @@ def encode(props):
     return json.dumps(props, separators=(',',':'))
 
 def decode(sdata, path='?'):
-    s = sdata.strip()
+    s = sdata and sdata.strip()
     if not s:
         data = {}
     elif s.startswith('{') and s.endswith('}'):
@@ -141,15 +141,20 @@ class ZooKeeper(Resolving):
         self.state = None
 
         def watch_session(state):
+            restore = False
+            logger.info("watch_session %s" % state)
             if state == kazoo.protocol.states.KazooState.CONNECTED:
-                if self.state == kazoo.protocol.states.KazooState.LOST:
-                    logger.warning("session lost")
+                restore = self.state == kazoo.protocol.states.KazooState.LOST
+                logger.info('connected')
+            self.state = state
+
+            if restore:
+                @zc.thread.Thread
+                def restore():
                     for path, data in self.ephemeral.items():
                         logger.info("restoring ephemeral %s", path)
                         self.create(
                             path, data['data'], data['acl'], ephemeral=True)
-                logger.info('connected')
-            self.state = state
 
         client.add_listener(watch_session)
 

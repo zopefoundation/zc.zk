@@ -79,12 +79,16 @@ def log_ephemeral_restoration_on_session_timeout():
     >>> handler.clear()
     >>> zk.client.lose_session()
     >>> print handler
-    zc.zk WARNING
-      session lost
     zc.zk INFO
-      restoring ephemeral /fooservice/providers/test
+      watch_session SUSPENDED
+    zc.zk INFO
+      watch_session LOST
+    zc.zk INFO
+      watch_session CONNECTED
     zc.zk INFO
       connected
+    zc.zk INFO
+      restoring ephemeral /fooservice/providers/test
 
     >>> zk.close()
     """
@@ -138,8 +142,12 @@ Now, if we make changes, they'll be properly reflected:
     ['providers', 'x']
 
     >>> print handler
-    zc.zk WARNING
-      session lost
+    zc.zk INFO
+      watch_session SUSPENDED
+    zc.zk INFO
+      watch_session LOST
+    zc.zk INFO
+      watch_session CONNECTED
     zc.zk INFO
       connected
 

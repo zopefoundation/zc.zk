@@ -1031,6 +1031,7 @@ def test_property_loops():
     [(u'a', 1), (u'b', 2)]
 
     >>> zk.close()
+    INFO watch_session SUSPENDED
     >>> logger.uninstall()
     """
 
@@ -1115,6 +1116,16 @@ def backward_compatible_create_recursive():
 
     >>> zk.close()
     """
+
+def node_data_may_be_None():
+    """
+    >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    >>> _ = zk.client.create('/empty', None)
+    >>> zk.get_properties('/empty')
+    {}
+    >>> zk.close()
+    """
+
 
 event = threading.Event()
 def check_async(show=True, expected_status=0):
