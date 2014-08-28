@@ -151,10 +151,13 @@ class ZooKeeper(Resolving):
             if restore:
                 @zc.thread.Thread
                 def restore():
-                    for path, data in self.ephemeral.items():
+                    for path, data in list(self.ephemeral.items()):
                         logger.info("restoring ephemeral %s", path)
-                        self.create(
-                            path, data['data'], data['acl'], ephemeral=True)
+                        try:
+                            self.create(
+                                path, data['data'], data['acl'], ephemeral=True)
+                        except kazoo.exceptions.NodeExistsError:
+                            pass # threads? <shrug>
 
         client.add_listener(watch_session)
 
