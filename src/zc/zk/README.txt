@@ -1251,6 +1251,9 @@ more, use the help function::
 Change History
 ==============
 
+2.0.1 (2014-08-28)
+==================
+
 - Fixed: ZooKeeper operations (including closing ZooKeeper
   connections) hung after network failures if ZooKeeper sessions were
   lost and ephemeral nodes (for registered services) had to be
