@@ -241,10 +241,10 @@ class Client:
             import kazoo.handlers.threading
             raise kazoo.handlers.threading.TimeoutError('Connection time-out',)
 
-    def create(
-        self, path, value="", acl=zc.zk.OPEN_ACL_UNSAFE, ephemeral=False
-        ):
-        return self.zookeeper.create(self.handle, path, value, acl, ephemeral)
+    def create(self, path, value="", acl=zc.zk.OPEN_ACL_UNSAFE,
+               ephemeral=False, sequence=False):
+        return self.zookeeper.create(self.handle, path, value, acl,
+                                     ephemeral, sequence)
 
     def ensure_path(self, path, acl=zc.zk.OPEN_ACL_UNSAFE):
         return self.zookeeper.ensure_path(self.handle, path, acl)
@@ -463,7 +463,7 @@ class ZooKeeper:
         with self.lock:
             return self._check_handle(handle, False).state
 
-    def create(self, handle, path, data, acl, ephemeral=False):
+    def create(self, handle, path, data, acl, ephemeral=False, sequence=False):
         if isinstance(path, str):
             path = path.decode('utf8')
         while path.endswith(u'/'):
@@ -473,6 +473,10 @@ class ZooKeeper:
         with self.lock:
             self._check_handle(handle)
             node = self._traverse(base or u'/')
+            if sequence:
+                name = "%s%010d" % (name, node.child_seqno)
+                node.child_seqno += 1
+                path = u'%s/%s' % (base, name)
             if name in node.children:
                 raise kazoo.exceptions.NodeExistsError()
             node.children[name] = newnode = Node(data)
@@ -615,6 +619,7 @@ class Node:
     version = aversion = cversion = 0
     acl = zc.zk.OPEN_ACL_UNSAFE
     ephemeral = False
+    child_seqno = 0
 
     @property
     def numChildren(self):
