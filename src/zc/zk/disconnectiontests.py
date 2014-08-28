@@ -162,6 +162,8 @@ Now, if we make changes, they'll be properly reflected:
     properties changed True
     children changed True
 
+    >>> import time; time.sleep(1)
+
     Our handlers were called because data changed.
 
     >>> dict(properties)
