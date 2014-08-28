@@ -1251,6 +1251,14 @@ more, use the help function::
 Change History
 ==============
 
+- Fixed: ZooKeeper operations (including closing ZooKeeper
+  connections) hung after network failures if ZooKeeper sessions were
+  lost and ephemeral nodes (for registered services) had to be
+  re-registered.
+
+- Fixed: Didn't properly handle None values for node data returned by
+  Kazoo 2.0.
+
 2.0.0 (2014-06-02)
 ==================
 

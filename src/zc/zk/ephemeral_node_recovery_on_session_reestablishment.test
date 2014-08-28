@@ -41,6 +41,11 @@ Some custom data and acl:
         a = 1
         pid = 9999
     >>> zk.client.lose_session()
+
+There be threading thar, so wait:
+
+    >>> import time; time.sleep(1)
+
     >>> zk.print_tree('/fooservice/providers')
     /providers
       /test

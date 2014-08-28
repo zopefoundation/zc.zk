@@ -79,12 +79,16 @@ def log_ephemeral_restoration_on_session_timeout():
     >>> handler.clear()
     >>> zk.client.lose_session()
     >>> print handler
-    zc.zk WARNING
-      session lost
     zc.zk INFO
-      restoring ephemeral /fooservice/providers/test
+      watch_session SUSPENDED
+    zc.zk INFO
+      watch_session LOST
+    zc.zk INFO
+      watch_session CONNECTED
     zc.zk INFO
       connected
+    zc.zk INFO
+      restoring ephemeral /fooservice/providers/test
 
     >>> zk.close()
     """
@@ -138,19 +142,25 @@ Now, if we make changes, they'll be properly reflected:
     ['providers', 'x']
 
     >>> print handler
-    zc.zk WARNING
-      session lost
+    zc.zk INFO
+      watch_session SUSPENDED
+    zc.zk INFO
+      watch_session LOST
+    zc.zk INFO
+      watch_session CONNECTED
     zc.zk INFO
       connected
 
     If changes are made while we're disconnected, we'll still see them:
 
-    >>> @zk.client.lose_session
-    ... def _():
-    ...     zk2 = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    ...     zk2.set('/fooservice', '{"test": 1}')
-    ...     zk2.create('/fooservice/y')
-    ...     zk2.close()
+    >>> if True:
+    ...     @zk.client.lose_session
+    ...     def _():
+    ...         zk2 = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    ...         zk2.set('/fooservice', '{"test": 1}')
+    ...         zk2.create('/fooservice/y')
+    ...         zk2.close()
+    ...     import time; time.sleep(1) # threads :/
     properties changed True
     children changed True
 

@@ -1,4 +1,7 @@
 language: python
+env:
+    - PYTHON_VER=2.6
+    - PYTHON_VER=2.7
 install:
     - python bootstrap.py
     - bin/buildout
