@@ -153,16 +153,16 @@ Now, if we make changes, they'll be properly reflected:
 
     If changes are made while we're disconnected, we'll still see them:
 
-    >>> @zk.client.lose_session
-    ... def _():
-    ...     zk2 = zc.zk.ZooKeeper('zookeeper.example.com:2181')
-    ...     zk2.set('/fooservice', '{"test": 1}')
-    ...     zk2.create('/fooservice/y')
-    ...     zk2.close()
+    >>> if True:
+    ...     @zk.client.lose_session
+    ...     def _():
+    ...         zk2 = zc.zk.ZooKeeper('zookeeper.example.com:2181')
+    ...         zk2.set('/fooservice', '{"test": 1}')
+    ...         zk2.create('/fooservice/y')
+    ...         zk2.close()
+    ...     import time; time.sleep(1) # threads :/
     properties changed True
     children changed True
-
-    >>> import time; time.sleep(1)
 
     Our handlers were called because data changed.
 
