@@ -11,7 +11,7 @@
 # FOR A PARTICULAR PURPOSE.
 #
 ##############################################################################
-name, version = 'zc.zk', '2.0.1'
+name, version = 'zc.zk', '2.1.0'
 
 install_requires = ['setuptools', 'zc.thread', 'kazoo']
 extras_require = dict(

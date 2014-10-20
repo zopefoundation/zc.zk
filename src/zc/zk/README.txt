@@ -1255,6 +1255,9 @@ more, use the help function::
 Change History
 ==============
 
+2.1.0 (2014-10-20)
+==================
+
 - Get the default connection string from ``ZC_ZK_CONNECTION_STRING`` if set.
 
 2.0.1 (2014-08-28)
