@@ -48,9 +48,11 @@ To use the helper API, create a ZooKeeper instance::
     >>> import zc.zk
     >>> zk = zc.zk.ZooKeeper('zookeeper.example.com:2181')
 
-The ZooKeeper constructor takes a ZooKeeper connection string, which is a
-comma-separated list of addresses of the form *HOST:PORT*.  It defaults
-to ``'127.0.0.1:2181'``, which is convenient during development.
+The ZooKeeper constructor takes a ZooKeeper connection string, which is
+a comma-separated list of addresses of the form *HOST:PORT*.  It
+defaults to the value of the ``ZC_ZK_CONNECTION_STRING`` environment
+variable, if set, or ``'127.0.0.1:2181'`` if not, which is convenient
+during development.
 
 You can also pass a kazoo client object, instead of a connection string.
 
@@ -1043,7 +1045,9 @@ zc.zk.ZooKeeper
 ``zc.zk.ZooKeeper([connection_string[, session_timeout[, wait]]])``
     Return a new instance given a ZooKeeper connection string.
 
-    The connection string defaults to '127.0.0.1:2181'.
+    The connection string defaults to the value of the
+    ``ZC_ZK_CONNECTION_STRING`` environment variable, if set, otherwise
+    '127.0.0.1:2181' will be used.
 
     If a session timeout (``session_timeout``) isn't specified, the
     ZooKeeper server's default session timeout is used.  If the
@@ -1250,6 +1254,8 @@ more, use the help function::
 
 Change History
 ==============
+
+- Get the default connection string from ``ZC_ZK_CONNECTION_STRING`` if set.
 
 2.0.1 (2014-08-28)
 ==================
