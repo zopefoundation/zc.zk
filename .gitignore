@@ -4,4 +4,7 @@ develop-eggs/
 parts/
 src/zc.zk.egg-info/
 build
-dist
+dist/
+*.py[co]
+__pycache__/
+build/
